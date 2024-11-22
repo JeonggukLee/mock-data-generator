@@ -2,6 +2,7 @@ package ddl
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -79,6 +80,9 @@ func Parse(ddl string) (Table, error) {
 				return table, fmt.Errorf("invalid DDL")
 			}
 			table.Name = parts[2] // Assuming "create table tableName ("
+			if strings.HasSuffix(table.Name, "(") {
+				table.Name = strings.Replace(table.Name, "(", "", 1)
+			}
 			inColumns = true
 			columnsStr = line[strings.Index(line, "(")+1 : strings.LastIndex(line, ")")]
 			break
@@ -87,16 +91,17 @@ func Parse(ddl string) (Table, error) {
 
 	// Parse columns
 	if inColumns {
-		columnLines := strings.Split(columnsStr, ",")
+		columnLines := splitIgnoringParentheses(columnsStr)
 		for _, colLine := range columnLines {
 			colLine = strings.TrimSpace(colLine)
-			parts := strings.Fields(colLine)
-			if len(parts) < 2 {
-				continue
-			}
+			dataName, dataType, precision, scale := extractDataTypeDetails(colLine)
 			column := Column{
-				Name:     strings.Trim(parts[0], " ,"),
-				DataType: strings.Trim(parts[1], " ,"),
+				Name:     dataName,
+				DataType: dataType,
+				DataSize: DataSize{
+					Precision: precision,
+					Scale:     scale,
+				},
 			}
 			table.Columns = append(table.Columns, column)
 		}
@@ -110,4 +115,56 @@ func Parse(ddl string) (Table, error) {
 	}
 
 	return table, nil
+}
+
+// Split line by comma
+func splitIgnoringParentheses(input string) []string {
+	var result []string
+	var currentPart strings.Builder
+	depth := 0 // 括弧のネストレベルをカウントする
+
+	for _, char := range input {
+		if char == '(' {
+			depth++
+		} else if char == ')' {
+			depth--
+		}
+
+		if char == ',' && depth == 0 {
+			result = append(result, currentPart.String())
+			currentPart.Reset()
+		} else {
+			currentPart.WriteRune(char)
+		}
+	}
+	result = append(result, currentPart.String())
+
+	return result
+}
+
+// Extracting data type details
+func extractDataTypeDetails(input string) (dataName string, dataType string, precision string, scale string) {
+	// Define regex pattern
+	regexPattern := `(\w+)\s*(boolean|char|varchar|text|smallint|bigint|real|integer|decimal|numeric|double\s*precision|serial|time|timestamp|date)[\s]?[\(]?(\d*)[,\s]?(\d*)[\)]?`
+	re := regexp.MustCompile(regexPattern)
+
+	matches := re.FindStringSubmatch(input)
+	if matches == nil {
+		fmt.Printf("解析できない情報: %s\n", input)
+		return
+	}
+
+	// extract type
+	dataName = matches[1]
+	dataType = matches[2]
+	var prec, scl string
+	if len(matches) > 4 && matches[3] != "" {
+		prec = matches[3]
+	}
+	if len(matches) > 5 && matches[4] != "" {
+		scl = matches[4]
+	}
+	precision = prec
+	scale = scl
+	return
 }

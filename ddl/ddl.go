@@ -10,4 +10,10 @@ type Table struct {
 type Column struct {
 	Name     string
 	DataType string
+	DataSize DataSize
+}
+
+type DataSize struct {
+	Precision string
+	Scale     string
 }

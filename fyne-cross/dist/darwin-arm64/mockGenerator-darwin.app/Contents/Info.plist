@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>mock-data-generator</string>
 	<key>CFBundleIdentifier</key>
-	<string>co.jp.flect.mockGenerator</string>
+	<string>jp.co.flect.mockGenerator</string>
 	<key>CFBundleIconFile</key>
 	<string>icon.icns</string>
 	<key>CFBundleShortVersionString</key>

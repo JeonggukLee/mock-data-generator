@@ -77,8 +77,8 @@ func main() {
 		}
 
 		mockData := mock.Generate(table.Columns)
-		insertSQL, updateSQL := sql.Generate(table, mockData)
-		outputEntry.SetText(insertSQL + "\n" + updateSQL)
+		tableName, columns, mockValues := sql.Generate(table, mockData)
+		outputEntry.SetText(fmt.Sprintf("【%s】：\n\n%s\n\n%s", tableName, columns, mockValues))
 	})
 
 	content := container.NewVBox(
