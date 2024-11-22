@@ -1,12 +1,11 @@
 package file
 
 import (
-	"io/ioutil"
 	"os"
 )
 
 func Read(path string) (string, error) {
-	bytes, err := ioutil.ReadFile(path)
+	bytes, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}

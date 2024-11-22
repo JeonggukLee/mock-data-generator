@@ -2,8 +2,9 @@ package sql
 
 import (
 	"fmt"
-	"mock-data-generator/ddl"
 	"strings"
+
+	"github.com/JeonggukLee/mock-data-generator/ddl"
 )
 
 func Generate(table ddl.Table, data map[string]string) (string, string) {

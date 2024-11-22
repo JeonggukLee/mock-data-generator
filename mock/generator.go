@@ -3,10 +3,11 @@ package mock
 import (
 	"fmt"
 	"math/rand"
-	"mock-data-generator/ddl"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/JeonggukLee/mock-data-generator/ddl"
 )
 
 func Generate(columns []ddl.Column) map[string]string {

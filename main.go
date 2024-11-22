@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"mock-data-generator/ddl"
-	"mock-data-generator/file"
-	"mock-data-generator/mock"
-	"mock-data-generator/sql"
+	"github.com/JeonggukLee/mock-data-generator/ddl"
+	"github.com/JeonggukLee/mock-data-generator/file"
+	"github.com/JeonggukLee/mock-data-generator/mock"
+	"github.com/JeonggukLee/mock-data-generator/sql"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
