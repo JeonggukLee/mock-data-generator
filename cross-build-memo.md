@@ -8,6 +8,8 @@
   プロジェクトのルートで以下のPackageインストールコマンドを実行
 
 ```bash
+$ go install fyne.io/fyne/v2@latest
+<中略>
 $ go install fyne.io/fyne/v2/cmd/fyne@latest
 ```
 
