@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // RemoveInlineComments removes inline comments (/* */, --, //) from ddl
@@ -56,37 +57,39 @@ func ReformatDDL(ddl string) string {
 
 // Parse parses DDL and extracts table name and columns
 func Parse(ddl string) (Table, error) {
-	ddl = RemoveInlineComments(ddl)
-	ddl = RemoveEmptyLines(ddl) // Remove empty lines
-
-	// Reformat DDL to ensure "create table" statement is on one line
-	ddl = ReformatDDL(ddl)
+	ddl = RemoveInlineComments(ddl) // Remove comment
+	ddl = RemoveEmptyLines(ddl)     // Remove empty lines
+	ddl = ReformatDDL(ddl)          // Reformat DDL to ensure "create table" statement is on one line
 
 	lines := strings.Split(ddl, ";") // Split statements by semicolon
+	// Regex pattern for table name.
+	const ddlPattern = `(?i)create[\s]+table[\s]+(\w+)[\s+]?\((.*)\)`
 	var table Table
 	var columnsStr string
 	inColumns := false
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" {
+		// create table line match
+		re := regexp.MustCompile(ddlPattern)
+		matches := re.FindStringSubmatch(line)
+		if line == "" || matches == nil {
 			continue
 		}
+		inColumns = true
 
 		// Handle create table statement
-		if strings.HasPrefix(strings.ToLower(line), "create table") {
-			parts := strings.Fields(line)
-			if len(parts) < 3 {
-				return table, fmt.Errorf("invalid DDL")
+		var builder strings.Builder
+		for idx, r := range []rune(matches[1]) {
+			prefixStr := ""
+			if idx != 0 && unicode.IsLetter(r) && unicode.IsUpper(r) {
+				prefixStr = "_"
 			}
-			table.Name = parts[2] // Assuming "create table tableName ("
-			if strings.HasSuffix(table.Name, "(") {
-				table.Name = strings.Replace(table.Name, "(", "", 1)
-			}
-			inColumns = true
-			columnsStr = line[strings.Index(line, "(")+1 : strings.LastIndex(line, ")")]
-			break
+			fmt.Fprintf(&builder, "%s%c", prefixStr, r)
 		}
+		table.Name = strings.ToLower(builder.String())
+		columnsStr = strings.TrimSpace(matches[2])
+		break
 	}
 
 	// Parse columns
