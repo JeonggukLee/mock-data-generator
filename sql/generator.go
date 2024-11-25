@@ -1,7 +1,6 @@
 package sql
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/JeonggukLee/mock-data-generator/ddl"
@@ -16,8 +15,8 @@ func Generate(table ddl.Table, data map[string]string) (string, string, string) 
 		values = append(values, data[col.Name])
 	}
 
-	columns := fmt.Sprintf("%s", strings.Join(names, ","))
-	mockValues := strings.ReplaceAll(fmt.Sprintf("%s", strings.Join(values, ",")), "'", "")
+	columns := strings.Join(names, ", ")
+	mockValues := strings.ReplaceAll(strings.Join(values, ", "), "'", "")
 
 	return table.Name, columns, mockValues
 }
