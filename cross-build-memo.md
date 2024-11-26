@@ -30,10 +30,10 @@ $ go install github.com/fyne-io/fyne-cross@latest
 
 #### Windows用 
 ```bash
-$ fyne-cross windows -output mockGenerator-win --app-id {jp.co.flect.mockGenerator}
+$ fyne-cross windows -output mockGenerator-win --app-id jp.co.flect.mockGenerator
 ```
 
 #### Mac(Drawin)用
 ```bash
-$ fyne-cross darwin -output mockGenerator-darwin --app-id {jp.co.flect.mockGenerator}
+$ fyne-cross darwin -output mockGenerator-darwin --app-id jp.co.flect.mockGenerator
 ```
