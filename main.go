@@ -8,7 +8,7 @@ import (
 	"github.com/JeonggukLee/mock-data-generator/ddl"
 	"github.com/JeonggukLee/mock-data-generator/file"
 	"github.com/JeonggukLee/mock-data-generator/mock"
-	"github.com/JeonggukLee/mock-data-generator/sql"
+	"github.com/JeonggukLee/mock-data-generator/output"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -76,8 +76,8 @@ func main() {
 			return
 		}
 
-		mockData := mock.Generate(table.Columns)
-		tableName, columns, mockValues := sql.Generate(table, mockData)
+		mockData := mock.MockGenerate(table.Columns)
+		tableName, columns, mockValues := output.Generate(table, mockData)
 		outputEntry.SetText(fmt.Sprintf("【%s】：\n\n%s\n\n%s", tableName, columns, mockValues))
 	})
 
