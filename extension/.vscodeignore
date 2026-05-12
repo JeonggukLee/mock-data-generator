@@ -6,4 +6,6 @@ node_modules/**
 tsconfig*.json
 vitest.config.ts
 esbuild.config.mjs
-*.map
+.gitignore
+**/*.map
+**/*.vsix
