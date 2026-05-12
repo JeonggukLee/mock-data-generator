@@ -1,0 +1,45 @@
+{
+  "name": "mock-data-generator-extension",
+  "displayName": "Mock Data Generator",
+  "description": "Generate PostgreSQL mock data (INSERT DML) from DDL files inside VSCode",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "publisher": "flect",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "mockGen.open",
+        "title": "Mock Data Generator: Open",
+        "category": "Mock Data Generator"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "build:prod": "NODE_ENV=production node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.webview.json --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
