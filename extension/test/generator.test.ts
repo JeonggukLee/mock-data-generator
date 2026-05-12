@@ -20,15 +20,19 @@ const col = (
 describe('generate - sequence rule', () => {
   it('produces consecutive integers from start with step', () => {
     const rows = generate([col('id', 'integer')], 5, {
-      rules: { id: { kind: 'sequence', start: 100, step: 5 } },
+      rules: {
+        id: { kind: 'sequence', start: 100, step: 5, zeroPad: false, padWidth: 0 },
+      },
       rng: new Mulberry32(42),
     });
     expect(rows.map((r) => r[0])).toEqual([100, 105, 110, 115, 120]);
   });
 
-  it('zero-pads with pad option', () => {
+  it('zero-pads when zeroPad is true', () => {
     const rows = generate([col('id', 'varchar')], 3, {
-      rules: { id: { kind: 'sequence', start: 1, step: 1, pad: 4 } },
+      rules: {
+        id: { kind: 'sequence', start: 1, step: 1, zeroPad: true, padWidth: 4 },
+      },
       rng: new Mulberry32(1),
     });
     expect(rows.map((r) => r[0])).toEqual(['0001', '0002', '0003']);
@@ -36,26 +40,33 @@ describe('generate - sequence rule', () => {
 });
 
 describe('generate - template_sequence rule', () => {
-  it('produces "prefix + padded number"', () => {
+  it('renders template with {N} placeholder and zero pad', () => {
     const rows = generate([col('id', 'varchar')], 3, {
       rules: {
-        id: { kind: 'template_sequence', prefix: 'USER_', start: 1, step: 1, pad: 3 },
+        id: {
+          kind: 'template_sequence',
+          template: 'USER_{N}',
+          start: 1,
+          step: 1,
+          zeroPad: true,
+          padWidth: 3,
+        },
       },
       rng: new Mulberry32(1),
     });
     expect(rows.map((r) => r[0])).toEqual(['USER_001', 'USER_002', 'USER_003']);
   });
 
-  it('supports suffix', () => {
+  it('supports suffix-style placement', () => {
     const rows = generate([col('id', 'varchar')], 2, {
       rules: {
         id: {
           kind: 'template_sequence',
-          prefix: 'ID_',
-          suffix: '_END',
+          template: 'ID_{N}_END',
           start: 10,
           step: 10,
-          pad: 0,
+          zeroPad: false,
+          padWidth: 0,
         },
       },
       rng: new Mulberry32(1),
@@ -65,10 +76,10 @@ describe('generate - template_sequence rule', () => {
 });
 
 describe('generate - format rule', () => {
-  it('respects literal characters and placeholders', () => {
+  it('respects literal characters and bracketed placeholders', () => {
     const rng = new Mulberry32(123);
     const rows = generate([col('code', 'varchar')], 1, {
-      rules: { code: { kind: 'format', pattern: 'AA-99' } },
+      rules: { code: { kind: 'format', pattern: '{AA}-{99}' } },
       rng,
     });
     const value = rows[0]?.[0] as string;
@@ -76,7 +87,7 @@ describe('generate - format rule', () => {
   });
 
   it('is deterministic with seed', () => {
-    const rule: Rule = { kind: 'format', pattern: 'AAAA-9999' };
+    const rule: Rule = { kind: 'format', pattern: '{AAAA}-{9999}' };
     const a = generate([col('c', 'varchar')], 3, { rules: { c: rule }, rng: new Mulberry32(7) });
     const b = generate([col('c', 'varchar')], 3, { rules: { c: rule }, rng: new Mulberry32(7) });
     expect(a).toEqual(b);
@@ -84,7 +95,7 @@ describe('generate - format rule', () => {
 
   it('produces hiragana / katakana / symbol characters', () => {
     const rows = generate([col('c', 'varchar')], 1, {
-      rules: { c: { kind: 'format', pattern: 'HHKKSS' } },
+      rules: { c: { kind: 'format', pattern: '{HHKKSS}' } },
       rng: new Mulberry32(3),
     });
     const value = rows[0]?.[0] as string;
@@ -96,9 +107,9 @@ describe('generate - format rule', () => {
 });
 
 describe('generate - number_range rule', () => {
-  it('produces integers within [min,max]', () => {
+  it('produces integers within [min,max] (random mode default)', () => {
     const rows = generate([col('n', 'integer')], 50, {
-      rules: { n: { kind: 'number_range', min: 10, max: 20 } },
+      rules: { n: { kind: 'number_range', min: 10, max: 20, mode: 'random' } },
       rng: new Mulberry32(99),
     });
     for (const r of rows) {
@@ -111,7 +122,9 @@ describe('generate - number_range rule', () => {
 
   it('respects decimals option', () => {
     const rows = generate([col('n', 'numeric')], 20, {
-      rules: { n: { kind: 'number_range', min: 0, max: 1, decimals: 2 } },
+      rules: {
+        n: { kind: 'number_range', min: 0, max: 1, decimals: 2, mode: 'random' },
+      },
       rng: new Mulberry32(77),
     });
     for (const r of rows) {
@@ -124,9 +137,11 @@ describe('generate - number_range rule', () => {
 });
 
 describe('generate - date_range rule', () => {
-  it('produces dates within range', () => {
+  it('produces dates within range (random mode default)', () => {
     const rows = generate([col('d', 'date')], 30, {
-      rules: { d: { kind: 'date_range', min: '2026-01-01', max: '2026-01-10' } },
+      rules: {
+        d: { kind: 'date_range', min: '2026-01-01', max: '2026-01-10', mode: 'random' },
+      },
       rng: new Mulberry32(55),
     });
     for (const r of rows) {
@@ -240,5 +255,314 @@ describe('generate - determinism', () => {
     const a = generate(columns, 5, { rng: new Mulberry32(2026) });
     const b = generate(columns, 5, { rng: new Mulberry32(2026) });
     expect(a).toEqual(b);
+  });
+});
+
+describe('Issue #1 reproduction: 連番のゼロ埋め ON/OFF', () => {
+  it('zeroPad=false: 整数値をそのまま出力（パディングしない）', () => {
+    const rows = generate([col('id', 'integer')], 5, {
+      rules: {
+        id: { kind: 'sequence', start: 1, step: 1, zeroPad: false, padWidth: 4 },
+      },
+      rng: new Mulberry32(1),
+    });
+    // zeroPad=false の時、padWidth が指定されていても無視される
+    expect(rows.map((r) => r[0])).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('zeroPad=true: padWidth 桁まで 0 埋め', () => {
+    const rows = generate([col('id', 'varchar')], 3, {
+      rules: {
+        id: { kind: 'sequence', start: 7, step: 1, zeroPad: true, padWidth: 5 },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual(['00007', '00008', '00009']);
+  });
+
+  it('zeroPad=true でも値が padWidth 桁を超える場合は切り捨てない', () => {
+    const rows = generate([col('id', 'varchar')], 1, {
+      rules: {
+        id: { kind: 'sequence', start: 12345, step: 1, zeroPad: true, padWidth: 3 },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows[0]?.[0]).toBe('12345');
+  });
+});
+
+describe('Issue #2 reproduction: 定型文＋連番のテンプレート統合', () => {
+  it('template に {N} を含めて任意位置に連番を埋め込める', () => {
+    const rows = generate([col('id', 'varchar')], 2, {
+      rules: {
+        id: {
+          kind: 'template_sequence',
+          template: 'ORDER-{N}-A',
+          start: 1,
+          step: 1,
+          zeroPad: true,
+          padWidth: 4,
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual(['ORDER-0001-A', 'ORDER-0002-A']);
+  });
+
+  it('{N} が無い場合は連番が末尾に付かない（純粋なリテラル文字列扱い）', () => {
+    const rows = generate([col('id', 'varchar')], 2, {
+      rules: {
+        id: {
+          kind: 'template_sequence',
+          template: 'STATIC',
+          start: 1,
+          step: 1,
+          zeroPad: false,
+          padWidth: 0,
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual(['STATIC', 'STATIC']);
+  });
+
+  it('zeroPad=false なら連番はパディング無しで埋め込まれる', () => {
+    const rows = generate([col('id', 'varchar')], 3, {
+      rules: {
+        id: {
+          kind: 'template_sequence',
+          template: 'V{N}',
+          start: 8,
+          step: 1,
+          zeroPad: false,
+          padWidth: 0,
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual(['V8', 'V9', 'V10']);
+  });
+
+  it('{N} を複数回置換できる', () => {
+    const rows = generate([col('id', 'varchar')], 1, {
+      rules: {
+        id: {
+          kind: 'template_sequence',
+          template: '{N}-{N}',
+          start: 5,
+          step: 1,
+          zeroPad: true,
+          padWidth: 2,
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows[0]?.[0]).toBe('05-05');
+  });
+});
+
+describe('Issue #3 reproduction: フォーマット指定の中括弧による識別', () => {
+  it('{...} 内のみフォーマット指定、外側はすべて一般リテラル', () => {
+    const rows = generate([col('c', 'varchar')], 10, {
+      rules: { c: { kind: 'format', pattern: '{AA}-{99}' } },
+      rng: new Mulberry32(123),
+    });
+    for (const r of rows) {
+      expect(r[0]).toMatch(/^[A-Z]{2}-[0-9]{2}$/);
+    }
+  });
+
+  it('リテラル "A" を含むパターン: A の前後に {} が無ければそのまま "A"', () => {
+    const rows = generate([col('c', 'varchar')], 5, {
+      rules: { c: { kind: 'format', pattern: 'A-{9}' } },
+      rng: new Mulberry32(7),
+    });
+    for (const r of rows) {
+      const v = r[0] as string;
+      expect(v).toMatch(/^A-[0-9]$/);
+      expect(v.slice(0, 2)).toBe('A-');
+    }
+  });
+
+  it('リテラル "9" を含むパターン: {A}9 は ランダム大文字＋リテラル"9"', () => {
+    const rows = generate([col('c', 'varchar')], 5, {
+      rules: { c: { kind: 'format', pattern: '{A}9' } },
+      rng: new Mulberry32(11),
+    });
+    for (const r of rows) {
+      const v = r[0] as string;
+      expect(v).toMatch(/^[A-Z]9$/);
+      expect(v.endsWith('9')).toBe(true);
+    }
+  });
+
+  it('連続する一般リテラルとフォーマットリテラルが識別できる', () => {
+    const rows = generate([col('c', 'varchar')], 5, {
+      rules: { c: { kind: 'format', pattern: 'PRE{AAA}MID{999}POST' } },
+      rng: new Mulberry32(13),
+    });
+    for (const r of rows) {
+      expect(r[0]).toMatch(/^PRE[A-Z]{3}MID[0-9]{3}POST$/);
+    }
+  });
+
+  it('一般リテラルに挟まれたフォーマット指定', () => {
+    const rows = generate([col('c', 'varchar')], 5, {
+      rules: { c: { kind: 'format', pattern: 'X{A}Y{9}Z' } },
+      rng: new Mulberry32(17),
+    });
+    for (const r of rows) {
+      expect(r[0]).toMatch(/^X[A-Z]Y[0-9]Z$/);
+    }
+  });
+
+  it('{} の外に書いた A/9 は識別子としてではなくリテラルとして扱われる', () => {
+    const rows = generate([col('c', 'varchar')], 5, {
+      rules: { c: { kind: 'format', pattern: 'AAAA9999' } },
+      rng: new Mulberry32(19),
+    });
+    for (const r of rows) {
+      expect(r[0]).toBe('AAAA9999');
+    }
+  });
+
+  it('未閉鎖の { は文字列終端までをフォーマット指定として扱う', () => {
+    const rows = generate([col('c', 'varchar')], 5, {
+      rules: { c: { kind: 'format', pattern: 'X{AA' } },
+      rng: new Mulberry32(23),
+    });
+    for (const r of rows) {
+      expect(r[0]).toMatch(/^X[A-Z]{2}$/);
+    }
+  });
+});
+
+describe('Issue #4 reproduction: 数値範囲/日付範囲のmode (random/increment/decrement)', () => {
+  describe('number_range', () => {
+    it('mode=increment: min から step ずつ加算、max 到達後は min に wrap', () => {
+      const rows = generate([col('n', 'integer')], 8, {
+        rules: {
+          n: { kind: 'number_range', min: 1, max: 3, mode: 'increment', step: 1 },
+        },
+        rng: new Mulberry32(1),
+      });
+      expect(rows.map((r) => r[0])).toEqual([1, 2, 3, 1, 2, 3, 1, 2]);
+    });
+
+    it('mode=decrement: max から step ずつ減算、min 通過後は max に wrap', () => {
+      const rows = generate([col('n', 'integer')], 6, {
+        rules: {
+          n: { kind: 'number_range', min: 1, max: 3, mode: 'decrement', step: 1 },
+        },
+        rng: new Mulberry32(1),
+      });
+      expect(rows.map((r) => r[0])).toEqual([3, 2, 1, 3, 2, 1]);
+    });
+
+    it('mode=increment with step=5', () => {
+      const rows = generate([col('n', 'integer')], 7, {
+        rules: {
+          n: { kind: 'number_range', min: 10, max: 30, mode: 'increment', step: 5 },
+        },
+        rng: new Mulberry32(1),
+      });
+      expect(rows.map((r) => r[0])).toEqual([10, 15, 20, 25, 30, 10, 15]);
+    });
+
+    it('mode=random は seed 固定で決定的', () => {
+      const rule: Rule = { kind: 'number_range', min: 0, max: 100, mode: 'random' };
+      const a = generate([col('n', 'integer')], 5, {
+        rules: { n: rule },
+        rng: new Mulberry32(42),
+      });
+      const b = generate([col('n', 'integer')], 5, {
+        rules: { n: rule },
+        rng: new Mulberry32(42),
+      });
+      expect(a).toEqual(b);
+    });
+
+    it('mode=increment with decimals', () => {
+      const rows = generate([col('n', 'numeric')], 4, {
+        rules: {
+          n: {
+            kind: 'number_range',
+            min: 0,
+            max: 1,
+            decimals: 1,
+            mode: 'increment',
+            step: 0.25,
+          },
+        },
+        rng: new Mulberry32(1),
+      });
+      expect(rows.map((r) => r[0])).toEqual([0, 0.3, 0.5, 0.8]);
+    });
+  });
+
+  describe('date_range', () => {
+    it('mode=increment: min から step 日ずつ加算', () => {
+      const rows = generate([col('d', 'date')], 5, {
+        rules: {
+          d: {
+            kind: 'date_range',
+            min: '2026-01-01',
+            max: '2026-01-03',
+            mode: 'increment',
+            step: 1,
+          },
+        },
+        rng: new Mulberry32(1),
+      });
+      expect(rows.map((r) => r[0])).toEqual([
+        '2026-01-01',
+        '2026-01-02',
+        '2026-01-03',
+        '2026-01-01',
+        '2026-01-02',
+      ]);
+    });
+
+    it('mode=decrement: max から step 日ずつ減算', () => {
+      const rows = generate([col('d', 'date')], 4, {
+        rules: {
+          d: {
+            kind: 'date_range',
+            min: '2026-01-01',
+            max: '2026-01-03',
+            mode: 'decrement',
+            step: 1,
+          },
+        },
+        rng: new Mulberry32(1),
+      });
+      expect(rows.map((r) => r[0])).toEqual([
+        '2026-01-03',
+        '2026-01-02',
+        '2026-01-01',
+        '2026-01-03',
+      ]);
+    });
+
+    it('mode=increment with step=2', () => {
+      const rows = generate([col('d', 'date')], 4, {
+        rules: {
+          d: {
+            kind: 'date_range',
+            min: '2026-01-01',
+            max: '2026-01-07',
+            mode: 'increment',
+            step: 2,
+          },
+        },
+        rng: new Mulberry32(1),
+      });
+      expect(rows.map((r) => r[0])).toEqual([
+        '2026-01-01',
+        '2026-01-03',
+        '2026-01-05',
+        '2026-01-07',
+      ]);
+    });
   });
 });

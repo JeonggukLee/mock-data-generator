@@ -140,16 +140,50 @@ function detectConflict(col: Column, rule: Rule): string | null {
 function estimateMaxLength(rule: Rule): number {
   switch (rule.kind) {
     case 'sequence':
-      return Math.max(String(rule.start).length, rule.pad ?? 0);
-    case 'template_sequence':
-      return (
-        rule.prefix.length +
-        (rule.suffix?.length ?? 0) +
-        Math.max(String(rule.start).length, rule.pad ?? 0)
+      return Math.max(
+        String(rule.start).length,
+        rule.zeroPad ? rule.padWidth : 0,
       );
+    case 'template_sequence': {
+      const numWidth = Math.max(
+        String(rule.start).length,
+        rule.zeroPad ? rule.padWidth : 0,
+      );
+      const placeholderCount = countOccurrences(rule.template, '{N}');
+      const literalLength = rule.template.length - placeholderCount * '{N}'.length;
+      return literalLength + placeholderCount * numWidth;
+    }
     case 'format':
-      return rule.pattern.length;
+      return estimateFormatLength(rule.pattern);
     default:
       return 0;
   }
+}
+
+function countOccurrences(s: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let pos = 0;
+  while ((pos = s.indexOf(needle, pos)) !== -1) {
+    count++;
+    pos += needle.length;
+  }
+  return count;
+}
+
+function estimateFormatLength(pattern: string): number {
+  let length = 0;
+  let i = 0;
+  while (i < pattern.length) {
+    if (pattern[i] === '{') {
+      const close = pattern.indexOf('}', i + 1);
+      const end = close === -1 ? pattern.length : close;
+      length += end - (i + 1);
+      i = end + 1;
+    } else {
+      length++;
+      i++;
+    }
+  }
+  return length;
 }

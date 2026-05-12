@@ -2,6 +2,7 @@ import type {
   DateRangeRule,
   FormatRule,
   NumberRangeRule,
+  RangeMode,
   Rule,
   SequenceRule,
   TemplateSequenceRule,
@@ -13,15 +14,28 @@ export type RuleKind = Rule['kind'];
 export function defaultRuleForKind(kind: RuleKind): Rule {
   switch (kind) {
     case 'sequence':
-      return { kind: 'sequence', start: 1, step: 1, pad: 0 };
+      return { kind: 'sequence', start: 1, step: 1, zeroPad: false, padWidth: 4 };
     case 'template_sequence':
-      return { kind: 'template_sequence', prefix: 'ID_', start: 1, step: 1, pad: 4 };
+      return {
+        kind: 'template_sequence',
+        template: 'ID_{N}',
+        start: 1,
+        step: 1,
+        zeroPad: true,
+        padWidth: 4,
+      };
     case 'format':
-      return { kind: 'format', pattern: 'AAA-9999' };
+      return { kind: 'format', pattern: '{AAA}-{9999}' };
     case 'number_range':
-      return { kind: 'number_range', min: 0, max: 100, decimals: 0 };
+      return { kind: 'number_range', min: 0, max: 100, decimals: 0, mode: 'random', step: 1 };
     case 'date_range':
-      return { kind: 'date_range', min: '2026-01-01', max: '2026-12-31' };
+      return {
+        kind: 'date_range',
+        min: '2026-01-01',
+        max: '2026-12-31',
+        mode: 'random',
+        step: 1,
+      };
     case 'value_list':
       return { kind: 'value_list', values: [] };
     case 'default':
@@ -72,11 +86,18 @@ function SequenceEditor({
         value={rule.step}
         onChange={(step) => onChange({ ...rule, step })}
       />
-      <NumberField
-        label="ゼロ埋め桁"
-        value={rule.pad ?? 0}
-        onChange={(pad) => onChange({ ...rule, pad })}
+      <CheckboxField
+        label="ゼロ埋め"
+        checked={rule.zeroPad}
+        onChange={(zeroPad) => onChange({ ...rule, zeroPad })}
       />
+      {rule.zeroPad && (
+        <NumberField
+          label="桁数"
+          value={rule.padWidth}
+          onChange={(padWidth) => onChange({ ...rule, padWidth })}
+        />
+      )}
     </div>
   );
 }
@@ -91,14 +112,10 @@ function TemplateSequenceEditor({
   return (
     <div className="editor-inline">
       <TextField
-        label="プレフィックス"
-        value={rule.prefix}
-        onChange={(prefix) => onChange({ ...rule, prefix })}
-      />
-      <TextField
-        label="サフィックス"
-        value={rule.suffix ?? ''}
-        onChange={(suffix) => onChange({ ...rule, suffix })}
+        label="定型文（{N}=連番）"
+        value={rule.template}
+        onChange={(template) => onChange({ ...rule, template })}
+        wide
       />
       <NumberField
         label="開始"
@@ -110,11 +127,18 @@ function TemplateSequenceEditor({
         value={rule.step}
         onChange={(step) => onChange({ ...rule, step })}
       />
-      <NumberField
-        label="桁"
-        value={rule.pad ?? 0}
-        onChange={(pad) => onChange({ ...rule, pad })}
+      <CheckboxField
+        label="ゼロ埋め"
+        checked={rule.zeroPad}
+        onChange={(zeroPad) => onChange({ ...rule, zeroPad })}
       />
+      {rule.zeroPad && (
+        <NumberField
+          label="桁数"
+          value={rule.padWidth}
+          onChange={(padWidth) => onChange({ ...rule, padWidth })}
+        />
+      )}
     </div>
   );
 }
@@ -132,8 +156,11 @@ function FormatEditor({
         label="パターン"
         value={rule.pattern}
         onChange={(pattern) => onChange({ ...rule, pattern })}
+        wide
       />
       <span className="legend">
+        {'{...}内 = フォーマット指定 / 外 = リテラル'}
+        <br />
         A=英大 / a=英小 / 9=数字 / X=英数 / H=ひらがな / K=カタカナ / S=記号
       </span>
     </div>
@@ -164,6 +191,17 @@ function NumberRangeEditor({
         value={rule.decimals ?? 0}
         onChange={(decimals) => onChange({ ...rule, decimals })}
       />
+      <RangeModeField
+        mode={rule.mode}
+        onChange={(mode) => onChange({ ...rule, mode })}
+      />
+      {rule.mode !== 'random' && (
+        <NumberField
+          label="ステップ"
+          value={rule.step ?? 1}
+          onChange={(step) => onChange({ ...rule, step })}
+        />
+      )}
     </div>
   );
 }
@@ -193,6 +231,17 @@ function DateRangeEditor({
           onChange={(e) => onChange({ ...rule, max: e.target.value })}
         />
       </label>
+      <RangeModeField
+        mode={rule.mode}
+        onChange={(mode) => onChange({ ...rule, mode })}
+      />
+      {rule.mode !== 'random' && (
+        <NumberField
+          label="ステップ（日）"
+          value={rule.step ?? 1}
+          onChange={(step) => onChange({ ...rule, step })}
+        />
+      )}
     </div>
   );
 }
@@ -220,6 +269,25 @@ function ValueListEditor({
         wide
       />
     </div>
+  );
+}
+
+function RangeModeField({
+  mode,
+  onChange,
+}: {
+  mode: RangeMode;
+  onChange: (m: RangeMode) => void;
+}) {
+  return (
+    <label className="field">
+      <span>生成モード</span>
+      <select value={mode} onChange={(e) => onChange(e.target.value as RangeMode)}>
+        <option value="random">ランダム</option>
+        <option value="increment">シーケンス(増)</option>
+        <option value="decrement">シーケンス(減)</option>
+      </select>
+    </label>
   );
 }
 
@@ -265,6 +333,27 @@ function TextField({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+function CheckboxField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (b: boolean) => void;
+}) {
+  return (
+    <label className="field checkbox-inline">
+      <span>{label}</span>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
       />
     </label>
   );

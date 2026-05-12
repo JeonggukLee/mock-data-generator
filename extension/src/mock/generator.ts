@@ -1,5 +1,6 @@
 import type { Column } from '../ddl/types.js';
 import type { Rule } from './rules.js';
+import { TEMPLATE_PLACEHOLDER } from './rules.js';
 
 export type RawValue = string | number | boolean | null;
 
@@ -65,17 +66,21 @@ export function generate(
 function valueFor(col: Column, rule: Rule, rowIdx: number, rng: Rng): RawValue {
   switch (rule.kind) {
     case 'sequence':
-      return formatSeq(rule.start + rule.step * rowIdx, rule.pad);
+      return formatSeq(rule.start + rule.step * rowIdx, rule.zeroPad, rule.padWidth);
     case 'template_sequence': {
-      const num = formatSeq(rule.start + rule.step * rowIdx, rule.pad);
-      return rule.prefix + num + (rule.suffix ?? '');
+      const num = formatSeq(
+        rule.start + rule.step * rowIdx,
+        rule.zeroPad,
+        rule.padWidth,
+      );
+      return rule.template.split(TEMPLATE_PLACEHOLDER).join(String(num));
     }
     case 'format':
       return renderFormat(rule.pattern, rng);
     case 'number_range':
-      return numberInRange(rule.min, rule.max, rule.decimals ?? 0, rng);
+      return numberFromRange(rule, rowIdx, rng);
     case 'date_range':
-      return dateInRange(rule.min, rule.max, rng);
+      return dateFromRange(rule, rowIdx, rng);
     case 'value_list': {
       if (rule.values.length === 0) return null;
       return rule.values[rng.nextInt(rule.values.length)] ?? null;
@@ -85,10 +90,10 @@ function valueFor(col: Column, rule: Rule, rowIdx: number, rng: Rng): RawValue {
   }
 }
 
-function formatSeq(n: number, pad?: number): string | number {
-  if (!pad || pad <= 0) return n;
+function formatSeq(n: number, zeroPad: boolean, padWidth: number): string | number {
+  if (!zeroPad || padWidth <= 0) return n;
   const sign = n < 0 ? '-' : '';
-  const body = Math.abs(n).toString().padStart(pad, '0');
+  const body = Math.abs(n).toString().padStart(padWidth, '0');
   return sign + body;
 }
 
@@ -115,53 +120,101 @@ function pickKatakana(rng: Rng): string {
   return String.fromCodePoint(start + rng.nextInt(end - start + 1));
 }
 
+function pickFormatChar(ch: string, rng: Rng): string {
+  switch (ch) {
+    case 'A':
+      return pickFromPool(POOLS.upper, rng);
+    case 'a':
+      return pickFromPool(POOLS.lower, rng);
+    case '9':
+      return pickFromPool(POOLS.digit, rng);
+    case 'X':
+      return pickFromPool(POOLS.upper + POOLS.lower + POOLS.digit, rng);
+    case 'H':
+      return pickHiragana(rng);
+    case 'K':
+      return pickKatakana(rng);
+    case 'S':
+      return pickFromPool(POOLS.symbol, rng);
+    default:
+      return ch;
+  }
+}
+
 function renderFormat(pattern: string, rng: Rng): string {
   let out = '';
-  for (const ch of pattern) {
-    switch (ch) {
-      case 'A':
-        out += pickFromPool(POOLS.upper, rng);
-        break;
-      case 'a':
-        out += pickFromPool(POOLS.lower, rng);
-        break;
-      case '9':
-        out += pickFromPool(POOLS.digit, rng);
-        break;
-      case 'X':
-        out += pickFromPool(POOLS.upper + POOLS.lower + POOLS.digit, rng);
-        break;
-      case 'H':
-        out += pickHiragana(rng);
-        break;
-      case 'K':
-        out += pickKatakana(rng);
-        break;
-      case 'S':
-        out += pickFromPool(POOLS.symbol, rng);
-        break;
-      default:
-        out += ch;
+  let i = 0;
+  while (i < pattern.length) {
+    const ch = pattern[i];
+    if (ch === '{') {
+      const close = pattern.indexOf('}', i + 1);
+      const end = close === -1 ? pattern.length : close;
+      const body = pattern.slice(i + 1, end);
+      for (const fc of body) {
+        out += pickFormatChar(fc, rng);
+      }
+      i = end + 1;
+      continue;
     }
+    out += ch ?? '';
+    i++;
   }
   return out;
 }
 
-function numberInRange(min: number, max: number, decimals: number, rng: Rng): number {
+function numberFromRange(
+  rule: { min: number; max: number; decimals?: number; mode: 'random' | 'increment' | 'decrement'; step?: number },
+  rowIdx: number,
+  rng: Rng,
+): number {
+  let { min, max } = rule;
   if (max < min) [min, max] = [max, min];
-  const value = min + rng.nextFloat() * (max - min);
-  if (decimals <= 0) return Math.floor(value + rng.nextFloat());
+  const decimals = rule.decimals ?? 0;
+  if (rule.mode === 'random') {
+    const value = min + rng.nextFloat() * (max - min);
+    if (decimals <= 0) return Math.floor(value + rng.nextFloat());
+    const factor = 10 ** decimals;
+    return Math.round(value * factor) / factor;
+  }
+  const step = rule.step ?? 1;
+  const span = max - min;
+  if (step <= 0 || span <= 0) {
+    return rule.mode === 'decrement' ? max : min;
+  }
+  const slots = Math.floor(span / step) + 1;
+  const idx = rowIdx % slots;
+  const offset = idx * step;
+  const raw = rule.mode === 'increment' ? min + offset : max - offset;
+  if (decimals <= 0) return Math.round(raw);
   const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
+  return Math.round(raw * factor) / factor;
 }
 
-function dateInRange(minIso: string, maxIso: string, rng: Rng): string {
-  const minMs = Date.parse(minIso);
-  const maxMs = Date.parse(maxIso);
+function dateFromRange(
+  rule: { min: string; max: string; mode: 'random' | 'increment' | 'decrement'; step?: number },
+  rowIdx: number,
+  rng: Rng,
+): string {
+  const MS_PER_DAY = 86_400_000;
+  const minMs = Date.parse(rule.min);
+  const maxMs = Date.parse(rule.max);
   const [lo, hi] = minMs <= maxMs ? [minMs, maxMs] : [maxMs, minMs];
-  const span = hi - lo;
-  const pickMs = lo + Math.floor(rng.nextFloat() * (span + 1));
-  return new Date(pickMs).toISOString().slice(0, 10);
+  if (rule.mode === 'random') {
+    const span = hi - lo;
+    const pickMs = lo + Math.floor(rng.nextFloat() * (span + 1));
+    return toIsoDate(pickMs);
+  }
+  const stepDays = Math.max(1, Math.floor(rule.step ?? 1));
+  const spanDays = Math.floor((hi - lo) / MS_PER_DAY);
+  const slots = Math.floor(spanDays / stepDays) + 1;
+  const idx = rowIdx % slots;
+  const offsetMs = idx * stepDays * MS_PER_DAY;
+  const ms = rule.mode === 'increment' ? lo + offsetMs : hi - offsetMs;
+  return toIsoDate(ms);
+}
+
+function toIsoDate(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
 }
 
 function defaultForColumn(col: Column, rng: Rng): RawValue {
