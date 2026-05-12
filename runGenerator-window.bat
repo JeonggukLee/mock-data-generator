@@ -1,1 +1,0 @@
-./fyne-cross/dist/windows-arm64/mockGenerator-windows.exe
