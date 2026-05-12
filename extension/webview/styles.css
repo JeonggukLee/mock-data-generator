@@ -202,6 +202,16 @@ input:focus {
   width: 320px;
 }
 
+.field.checkbox-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+.field.checkbox-inline input[type='checkbox'] {
+  width: auto;
+}
+
 .legend {
   font-size: 0.75rem;
   color: var(--vscode-descriptionForeground);

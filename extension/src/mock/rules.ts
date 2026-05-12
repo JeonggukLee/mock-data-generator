@@ -2,16 +2,17 @@ export type SequenceRule = {
   kind: 'sequence';
   start: number;
   step: number;
-  pad?: number;
+  zeroPad: boolean;
+  padWidth: number;
 };
 
 export type TemplateSequenceRule = {
   kind: 'template_sequence';
-  prefix: string;
-  suffix?: string;
+  template: string;
   start: number;
   step: number;
-  pad?: number;
+  zeroPad: boolean;
+  padWidth: number;
 };
 
 export type FormatRule = {
@@ -19,17 +20,23 @@ export type FormatRule = {
   pattern: string;
 };
 
+export type RangeMode = 'random' | 'increment' | 'decrement';
+
 export type NumberRangeRule = {
   kind: 'number_range';
   min: number;
   max: number;
   decimals?: number;
+  mode: RangeMode;
+  step?: number;
 };
 
 export type DateRangeRule = {
   kind: 'date_range';
   min: string;
   max: string;
+  mode: RangeMode;
+  step?: number;
 };
 
 export type ValueListRule = {
@@ -49,3 +56,5 @@ export type Rule =
   | DateRangeRule
   | ValueListRule
   | DefaultRule;
+
+export const TEMPLATE_PLACEHOLDER = '{N}';

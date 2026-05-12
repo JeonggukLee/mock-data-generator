@@ -24,7 +24,13 @@ describe.each(fixtures)('end-to-end round-trip: %s', (fixtureName) => {
     const rules: Record<string, Rule> = {};
     const firstCol = table.columns[0];
     if (firstCol) {
-      rules[firstCol.name] = { kind: 'sequence', start: 1, step: 1, pad: 4 };
+      rules[firstCol.name] = {
+        kind: 'sequence',
+        start: 1,
+        step: 1,
+        zeroPad: true,
+        padWidth: 4,
+      };
     }
 
     const rows = generate(table.columns, 10, { rules, rng });
