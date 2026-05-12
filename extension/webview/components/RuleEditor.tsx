@@ -8,6 +8,7 @@ import type {
   TemplateSequenceRule,
   ValueListRule,
 } from '../../src/mock/rules.js';
+import { parseValueList, serializeValueList } from '../../src/mock/valueList.js';
 
 export type RuleKind = Rule['kind'];
 
@@ -253,19 +254,13 @@ function ValueListEditor({
   rule: ValueListRule;
   onChange: (r: Rule) => void;
 }) {
-  const text = rule.values.map((v) => (v === null ? '' : String(v))).join(', ');
+  const text = serializeValueList(rule.values);
   return (
     <div className="editor-inline">
       <TextField
-        label="値（カンマ区切り）"
+        label="値（カンマ区切り / \\, でコンマ、\\\\ で \\ をエスケープ）"
         value={text}
-        onChange={(next) => {
-          const values = next
-            .split(',')
-            .map((s) => s.trim())
-            .filter((s) => s.length > 0);
-          onChange({ ...rule, values });
-        }}
+        onChange={(next) => onChange({ ...rule, values: parseValueList(next) })}
         wide
       />
     </div>
