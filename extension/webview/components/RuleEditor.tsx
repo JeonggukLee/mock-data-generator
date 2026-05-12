@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type {
   DateRangeRule,
   FormatRule,
@@ -254,13 +255,19 @@ function ValueListEditor({
   rule: ValueListRule;
   onChange: (r: Rule) => void;
 }) {
-  const text = serializeValueList(rule.values);
+  // raw text を local state に保持。serialize は初期表示の 1 回のみ。
+  // 親への onChange では parse 結果を渡すが、text を serialize で書き戻さないため
+  // 入力途中の \ が \\ にすり替わる問題を回避する。
+  const [text, setText] = useState(() => serializeValueList(rule.values));
   return (
     <div className="editor-inline">
       <TextField
         label="値（カンマ区切り / \\, でコンマ、\\\\ で \\ をエスケープ）"
         value={text}
-        onChange={(next) => onChange({ ...rule, values: parseValueList(next) })}
+        onChange={(next) => {
+          setText(next);
+          onChange({ ...rule, values: parseValueList(next) });
+        }}
         wide
       />
     </div>
