@@ -57,6 +57,27 @@ npm run package        # → dist/mock-data-generator-extension-<version>.vsix �
 code --install-extension dist/mock-data-generator-extension-*.vsix
 ```
 
+## .vsix の作成（配布用）
+
+社内・チーム向けに `.vsix` を生成して配布する手順:
+
+```bash
+git clone https://github.com/JeonggukLee/mock-data-generator.git
+cd mock-data-generator/extension
+npm install
+npm run package
+```
+
+`npm run package` は内部で `npm run build:prod`（minify ビルド）→ `vsce package --no-dependencies` を実行し、以下のファイルを生成します:
+
+```
+extension/dist/mock-data-generator-extension-<version>.vsix
+```
+
+バージョンは `extension/package.json` の `version` フィールドに依存します。配布時はこのバージョンを更新してから再実行してください。
+
+生成された `.vsix` を「A. `.vsix` ファイルからインストール」の手順で受け取り側に導入できます。
+
 ## 使い方
 
 1. コマンドパレット（Windows: `Ctrl+Shift+P` , MacOS: `Cmd+Shift+P`）から **`Mock Data Generator: Open`** を実行 → WebView パネルが開く
