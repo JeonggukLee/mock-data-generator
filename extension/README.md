@@ -16,7 +16,10 @@ PostgreSQL の `CREATE TABLE` DDL から、カラム別ルールに基づいた�
 - **フォーマット指定**: `{...}` 内のみフォーマット指定として解釈、外側は一般リテラル
   - 文字種: `A`=英大 / `a`=英小 / `9`=数字 / `X`=英数 / `H`=ひらがな / `K`=カタカナ / `S`=記号
   - 例: `{AAA}-{9999}` → `ABC-1234`、`PRE{A}-{99}` → `PREB-42`、`A-{9}` → `A-3`（先頭 `A` はリテラル）
-- **数値範囲 / 日付範囲**: 生成モード（ランダム / シーケンス増 / シーケンス減）を選択。シーケンス時はステップ幅を指定し、`[min, max]` を超えると循環する
+- **数値範囲**: 生成モード（ランダム / シーケンス増 / シーケンス減）を選択。シーケンス時はステップ幅を指定し、`[min, max]` を超えると循環する
+- **日付範囲**: モード + ステップ + 単位（日 / 月 / 年）。月単位での日末は次月最終日に clamp（例: `2026-01-31` + 1ヶ月 → `2026-02-28`）
+- **時刻範囲**: `HH:MM:SS` の min/max。モード + ステップ + 単位（秒 / 分 / 時）
+- **タイムスタンプ範囲**: `YYYY-MM-DDTHH:MM:SS` の min/max。モード + ステップ + 単位（秒 / 分 / 時 / 日）。生成値は `YYYY-MM-DD HH:MM:SS`
 - **値リスト**: カンマ区切り。値内のコンマは `\,`、リテラル `\` は `\\` でエスケープ
 
 ## インストール
@@ -26,17 +29,23 @@ PostgreSQL の `CREATE TABLE` DDL から、カラム別ルールに基づいた�
 1. リリース成果物（または社内配布された）`mock-data-generator-extension-<version>.vsix` を入手
 2. 以下のいずれかの方法でインストール:
 
-   **コマンドラインから**
-   ```bash
-   code --install-extension mock-data-generator-extension-<version>.vsix
-   ```
+**VSCodeからPATHにコマンドを追加:** (未インストールの場合のみ実施)
+  1. VSCodeを起動
+  2. Windows: **`Ctrl+Shift+P`** または **`F1`** , MacOS: **`Cmd+Shift+P`**
+  3. **`shell command`** と入力
+  4. **`Shell Command: Install 'code' command in PATH`** を選択して実行
 
-   **VSCode UI から**
-   - Extensions パネル（`Cmd+Shift+X`）を開く
-   - 右上の `...` メニュー → `Install from VSIX...`
-   - 受け取った `.vsix` ファイルを選択
+**コマンドラインから:**
+  ```bash
+  code --install-extension mock-data-generator-extension-<version>.vsix
+  ```
 
-3. インストール後、VSCode を再読み込み（`Developer: Reload Window`）
+**VSCode UI から:**
+  - Extensions パネル（Windows: `Ctrl+Shift+X` , MacOS: `Cmd+Shift+X`）を開く
+  - 右上の `...` メニュー → `Install from VSIX...`
+  - 受け取った `.vsix` ファイルを選択
+
+1. インストール後、VSCode を再読み込み（`Developer: Reload Window`）
 
 ### B. ソースからビルドしてインストール
 
@@ -50,7 +59,7 @@ code --install-extension dist/mock-data-generator-extension-*.vsix
 
 ## 使い方
 
-1. コマンドパレット（`Cmd+Shift+P`）から **`Mock Data Generator: Open`** を実行 → WebView パネルが開く
+1. コマンドパレット（Windows: `Ctrl+Shift+P` , MacOS: `Cmd+Shift+P`）から **`Mock Data Generator: Open`** を実行 → WebView パネルが開く
 2. **DDL を貼付** または **ファイルを選択** → 「DDL を解析」をクリック
 3. **カラム別ルール設定**でカラムごとに生成ルールを選択・調整
 4. **件数**を入力して「モックデータ生成」

@@ -566,3 +566,368 @@ describe('Issue #4 reproduction: 数値範囲/日付範囲のmode (random/increm
     });
   });
 });
+
+describe('generate - date_range rule with step units (months / years)', () => {
+  it('stepUnit=months: 月単位でインクリメント', () => {
+    const rows = generate([col('d', 'date')], 4, {
+      rules: {
+        d: {
+          kind: 'date_range',
+          min: '2026-01-15',
+          max: '2026-12-15',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'months',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-01-15',
+      '2026-02-15',
+      '2026-03-15',
+      '2026-04-15',
+    ]);
+  });
+
+  it('stepUnit=months: 月末は次月の最終日に clamp', () => {
+    const rows = generate([col('d', 'date')], 4, {
+      rules: {
+        d: {
+          kind: 'date_range',
+          min: '2026-01-31',
+          max: '2026-04-30',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'months',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-01-31',
+      '2026-02-28',
+      '2026-03-31',
+      '2026-04-30',
+    ]);
+  });
+
+  it('stepUnit=years: 年単位でインクリメント', () => {
+    const rows = generate([col('d', 'date')], 4, {
+      rules: {
+        d: {
+          kind: 'date_range',
+          min: '2026-06-01',
+          max: '2030-06-01',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'years',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-06-01',
+      '2027-06-01',
+      '2028-06-01',
+      '2029-06-01',
+    ]);
+  });
+
+  it('stepUnit=months で wrap', () => {
+    const rows = generate([col('d', 'date')], 5, {
+      rules: {
+        d: {
+          kind: 'date_range',
+          min: '2026-01-15',
+          max: '2026-03-15',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'months',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-01-15',
+      '2026-02-15',
+      '2026-03-15',
+      '2026-01-15',
+      '2026-02-15',
+    ]);
+  });
+
+  it('stepUnit=months, mode=decrement: 月単位で減算', () => {
+    const rows = generate([col('d', 'date')], 4, {
+      rules: {
+        d: {
+          kind: 'date_range',
+          min: '2026-01-15',
+          max: '2026-04-15',
+          mode: 'decrement',
+          step: 1,
+          stepUnit: 'months',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-04-15',
+      '2026-03-15',
+      '2026-02-15',
+      '2026-01-15',
+    ]);
+  });
+
+  it('stepUnit 未指定の既存ルールは日単位として動作（後方互換）', () => {
+    const rows = generate([col('d', 'date')], 3, {
+      rules: {
+        d: {
+          kind: 'date_range',
+          min: '2026-01-01',
+          max: '2026-01-31',
+          mode: 'increment',
+          step: 1,
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-01-01',
+      '2026-01-02',
+      '2026-01-03',
+    ]);
+  });
+});
+
+describe('generate - time_range rule', () => {
+  it('random mode: 全行が HH:MM:SS で [min,max] 内', () => {
+    const rows = generate([col('t', 'time')], 30, {
+      rules: {
+        t: {
+          kind: 'time_range',
+          min: '09:00:00',
+          max: '17:00:00',
+          mode: 'random',
+        },
+      },
+      rng: new Mulberry32(7),
+    });
+    for (const r of rows) {
+      const v = r[0] as string;
+      expect(v).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+      expect(v >= '09:00:00').toBe(true);
+      expect(v <= '17:00:00').toBe(true);
+    }
+  });
+
+  it('increment stepUnit=seconds', () => {
+    const rows = generate([col('t', 'time')], 3, {
+      rules: {
+        t: {
+          kind: 'time_range',
+          min: '00:00:00',
+          max: '00:00:10',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'seconds',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual(['00:00:00', '00:00:01', '00:00:02']);
+  });
+
+  it('increment stepUnit=minutes', () => {
+    const rows = generate([col('t', 'time')], 4, {
+      rules: {
+        t: {
+          kind: 'time_range',
+          min: '12:00:00',
+          max: '12:05:00',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'minutes',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '12:00:00',
+      '12:01:00',
+      '12:02:00',
+      '12:03:00',
+    ]);
+  });
+
+  it('increment stepUnit=hours', () => {
+    const rows = generate([col('t', 'time')], 4, {
+      rules: {
+        t: {
+          kind: 'time_range',
+          min: '00:00:00',
+          max: '06:00:00',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'hours',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '00:00:00',
+      '01:00:00',
+      '02:00:00',
+      '03:00:00',
+    ]);
+  });
+
+  it('decrement stepUnit=hours', () => {
+    const rows = generate([col('t', 'time')], 3, {
+      rules: {
+        t: {
+          kind: 'time_range',
+          min: '00:00:00',
+          max: '03:00:00',
+          mode: 'decrement',
+          step: 1,
+          stepUnit: 'hours',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual(['03:00:00', '02:00:00', '01:00:00']);
+  });
+
+  it('increment で wrap', () => {
+    const rows = generate([col('t', 'time')], 5, {
+      rules: {
+        t: {
+          kind: 'time_range',
+          min: '00:00:00',
+          max: '00:00:02',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'seconds',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '00:00:00',
+      '00:00:01',
+      '00:00:02',
+      '00:00:00',
+      '00:00:01',
+    ]);
+  });
+});
+
+describe('generate - timestamp_range rule', () => {
+  it('random mode: 全行が YYYY-MM-DD HH:MM:SS 形式かつ範囲内', () => {
+    const rows = generate([col('ts', 'timestamp')], 20, {
+      rules: {
+        ts: {
+          kind: 'timestamp_range',
+          min: '2026-01-01T00:00:00',
+          max: '2026-01-31T23:59:59',
+          mode: 'random',
+        },
+      },
+      rng: new Mulberry32(13),
+    });
+    for (const r of rows) {
+      const v = r[0] as string;
+      expect(v).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+      expect(v >= '2026-01-01 00:00:00').toBe(true);
+      expect(v <= '2026-01-31 23:59:59').toBe(true);
+    }
+  });
+
+  it('increment stepUnit=hours', () => {
+    const rows = generate([col('ts', 'timestamp')], 4, {
+      rules: {
+        ts: {
+          kind: 'timestamp_range',
+          min: '2026-01-01T00:00:00',
+          max: '2026-01-01T05:00:00',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'hours',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-01-01 00:00:00',
+      '2026-01-01 01:00:00',
+      '2026-01-01 02:00:00',
+      '2026-01-01 03:00:00',
+    ]);
+  });
+
+  it('increment stepUnit=days', () => {
+    const rows = generate([col('ts', 'timestamp')], 3, {
+      rules: {
+        ts: {
+          kind: 'timestamp_range',
+          min: '2026-01-01T12:30:00',
+          max: '2026-01-05T12:30:00',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'days',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-01-01 12:30:00',
+      '2026-01-02 12:30:00',
+      '2026-01-03 12:30:00',
+    ]);
+  });
+
+  it('decrement stepUnit=hours', () => {
+    const rows = generate([col('ts', 'timestamp')], 3, {
+      rules: {
+        ts: {
+          kind: 'timestamp_range',
+          min: '2026-01-01T00:00:00',
+          max: '2026-01-01T02:00:00',
+          mode: 'decrement',
+          step: 1,
+          stepUnit: 'hours',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-01-01 02:00:00',
+      '2026-01-01 01:00:00',
+      '2026-01-01 00:00:00',
+    ]);
+  });
+
+  it('increment で wrap', () => {
+    const rows = generate([col('ts', 'timestamp')], 5, {
+      rules: {
+        ts: {
+          kind: 'timestamp_range',
+          min: '2026-01-01T00:00:00',
+          max: '2026-01-01T00:00:02',
+          mode: 'increment',
+          step: 1,
+          stepUnit: 'seconds',
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    expect(rows.map((r) => r[0])).toEqual([
+      '2026-01-01 00:00:00',
+      '2026-01-01 00:00:01',
+      '2026-01-01 00:00:02',
+      '2026-01-01 00:00:00',
+      '2026-01-01 00:00:01',
+    ]);
+  });
+});

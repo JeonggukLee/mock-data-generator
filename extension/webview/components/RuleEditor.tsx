@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import type {
   DateRangeRule,
+  DateStepUnit,
   FormatRule,
   NumberRangeRule,
   RangeMode,
   Rule,
   SequenceRule,
   TemplateSequenceRule,
+  TimeRangeRule,
+  TimeStepUnit,
+  TimestampRangeRule,
+  TimestampStepUnit,
   ValueListRule,
 } from '../../src/mock/rules.js';
 import { parseValueList, serializeValueList } from '../../src/mock/valueList.js';
@@ -37,6 +42,25 @@ export function defaultRuleForKind(kind: RuleKind): Rule {
         max: '2026-12-31',
         mode: 'random',
         step: 1,
+        stepUnit: 'days',
+      };
+    case 'time_range':
+      return {
+        kind: 'time_range',
+        min: '00:00:00',
+        max: '23:59:59',
+        mode: 'random',
+        step: 1,
+        stepUnit: 'seconds',
+      };
+    case 'timestamp_range':
+      return {
+        kind: 'timestamp_range',
+        min: '2026-01-01T00:00:00',
+        max: '2026-12-31T23:59:59',
+        mode: 'random',
+        step: 1,
+        stepUnit: 'seconds',
       };
     case 'value_list':
       return { kind: 'value_list', values: [] };
@@ -62,6 +86,10 @@ export function RuleEditor({ rule, onChange }: Props) {
       return <NumberRangeEditor rule={rule} onChange={onChange} />;
     case 'date_range':
       return <DateRangeEditor rule={rule} onChange={onChange} />;
+    case 'time_range':
+      return <TimeRangeEditor rule={rule} onChange={onChange} />;
+    case 'timestamp_range':
+      return <TimestampRangeEditor rule={rule} onChange={onChange} />;
     case 'value_list':
       return <ValueListEditor rule={rule} onChange={onChange} />;
     case 'default':
@@ -238,13 +266,160 @@ function DateRangeEditor({
         onChange={(mode) => onChange({ ...rule, mode })}
       />
       {rule.mode !== 'random' && (
-        <NumberField
-          label="ステップ（日）"
-          value={rule.step ?? 1}
-          onChange={(step) => onChange({ ...rule, step })}
-        />
+        <>
+          <NumberField
+            label="ステップ"
+            value={rule.step ?? 1}
+            onChange={(step) => onChange({ ...rule, step })}
+          />
+          <StepUnitField<DateStepUnit>
+            value={rule.stepUnit ?? 'days'}
+            options={DATE_STEP_UNIT_OPTIONS}
+            onChange={(stepUnit) => onChange({ ...rule, stepUnit })}
+          />
+        </>
       )}
     </div>
+  );
+}
+
+function TimeRangeEditor({
+  rule,
+  onChange,
+}: {
+  rule: TimeRangeRule;
+  onChange: (r: Rule) => void;
+}) {
+  return (
+    <div className="editor-inline">
+      <label className="field">
+        <span>最小</span>
+        <input
+          type="time"
+          step={1}
+          value={rule.min}
+          onChange={(e) => onChange({ ...rule, min: e.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>最大</span>
+        <input
+          type="time"
+          step={1}
+          value={rule.max}
+          onChange={(e) => onChange({ ...rule, max: e.target.value })}
+        />
+      </label>
+      <RangeModeField
+        mode={rule.mode}
+        onChange={(mode) => onChange({ ...rule, mode })}
+      />
+      {rule.mode !== 'random' && (
+        <>
+          <NumberField
+            label="ステップ"
+            value={rule.step ?? 1}
+            onChange={(step) => onChange({ ...rule, step })}
+          />
+          <StepUnitField<TimeStepUnit>
+            value={rule.stepUnit ?? 'seconds'}
+            options={TIME_STEP_UNIT_OPTIONS}
+            onChange={(stepUnit) => onChange({ ...rule, stepUnit })}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function TimestampRangeEditor({
+  rule,
+  onChange,
+}: {
+  rule: TimestampRangeRule;
+  onChange: (r: Rule) => void;
+}) {
+  return (
+    <div className="editor-inline">
+      <label className="field">
+        <span>最小</span>
+        <input
+          type="datetime-local"
+          step={1}
+          value={rule.min}
+          onChange={(e) => onChange({ ...rule, min: e.target.value })}
+        />
+      </label>
+      <label className="field">
+        <span>最大</span>
+        <input
+          type="datetime-local"
+          step={1}
+          value={rule.max}
+          onChange={(e) => onChange({ ...rule, max: e.target.value })}
+        />
+      </label>
+      <RangeModeField
+        mode={rule.mode}
+        onChange={(mode) => onChange({ ...rule, mode })}
+      />
+      {rule.mode !== 'random' && (
+        <>
+          <NumberField
+            label="ステップ"
+            value={rule.step ?? 1}
+            onChange={(step) => onChange({ ...rule, step })}
+          />
+          <StepUnitField<TimestampStepUnit>
+            value={rule.stepUnit ?? 'seconds'}
+            options={TIMESTAMP_STEP_UNIT_OPTIONS}
+            onChange={(stepUnit) => onChange({ ...rule, stepUnit })}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+const DATE_STEP_UNIT_OPTIONS: ReadonlyArray<{ value: DateStepUnit; label: string }> = [
+  { value: 'days', label: '日' },
+  { value: 'months', label: '月' },
+  { value: 'years', label: '年' },
+];
+
+const TIME_STEP_UNIT_OPTIONS: ReadonlyArray<{ value: TimeStepUnit; label: string }> = [
+  { value: 'seconds', label: '秒' },
+  { value: 'minutes', label: '分' },
+  { value: 'hours', label: '時' },
+];
+
+const TIMESTAMP_STEP_UNIT_OPTIONS: ReadonlyArray<{ value: TimestampStepUnit; label: string }> = [
+  { value: 'seconds', label: '秒' },
+  { value: 'minutes', label: '分' },
+  { value: 'hours', label: '時' },
+  { value: 'days', label: '日' },
+];
+
+function StepUnitField<U extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: U;
+  options: ReadonlyArray<{ value: U; label: string }>;
+  onChange: (u: U) => void;
+}) {
+  return (
+    <label className="field">
+      <span>単位</span>
+      <select value={value} onChange={(e) => onChange(e.target.value as U)}>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

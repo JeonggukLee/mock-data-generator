@@ -31,12 +31,37 @@ export type NumberRangeRule = {
   step?: number;
 };
 
+export type DateStepUnit = 'days' | 'months' | 'years';
+
 export type DateRangeRule = {
   kind: 'date_range';
   min: string;
   max: string;
   mode: RangeMode;
   step?: number;
+  stepUnit?: DateStepUnit;
+};
+
+export type TimeStepUnit = 'seconds' | 'minutes' | 'hours';
+
+export type TimeRangeRule = {
+  kind: 'time_range';
+  min: string;
+  max: string;
+  mode: RangeMode;
+  step?: number;
+  stepUnit?: TimeStepUnit;
+};
+
+export type TimestampStepUnit = 'seconds' | 'minutes' | 'hours' | 'days';
+
+export type TimestampRangeRule = {
+  kind: 'timestamp_range';
+  min: string;
+  max: string;
+  mode: RangeMode;
+  step?: number;
+  stepUnit?: TimestampStepUnit;
 };
 
 export type ValueListRule = {
@@ -54,6 +79,8 @@ export type Rule =
   | FormatRule
   | NumberRangeRule
   | DateRangeRule
+  | TimeRangeRule
+  | TimestampRangeRule
   | ValueListRule
   | DefaultRule;
 
