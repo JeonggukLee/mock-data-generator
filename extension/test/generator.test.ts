@@ -931,3 +931,293 @@ describe('generate - timestamp_range rule', () => {
     ]);
   });
 });
+
+describe('generate - null rule', () => {
+  it('常に null を出力する', () => {
+    const rows = generate([col('opt', 'varchar')], 5, {
+      rules: { opt: { kind: 'null' } },
+      rng: new Mulberry32(1),
+    });
+    for (const r of rows) {
+      expect(r[0]).toBeNull();
+    }
+  });
+
+  it('複数カラムの中で対象カラムだけ null になる', () => {
+    const rows = generate(
+      [col('a', 'integer'), col('b', 'varchar'), col('c', 'integer')],
+      3,
+      {
+        rules: { b: { kind: 'null' } },
+        rng: new Mulberry32(2),
+      },
+    );
+    for (const r of rows) {
+      expect(r[0]).not.toBeNull();
+      expect(r[1]).toBeNull();
+      expect(r[2]).not.toBeNull();
+    }
+  });
+});
+
+describe('generate - fixed rule', () => {
+  it('常に同じ固定文字列を返す', () => {
+    const rows = generate([col('s', 'varchar')], 4, {
+      rules: { s: { kind: 'fixed', value: 'HELLO' } },
+      rng: new Mulberry32(3),
+    });
+    for (const r of rows) {
+      expect(r[0]).toBe('HELLO');
+    }
+  });
+
+  it('空文字列も許容', () => {
+    const rows = generate([col('s', 'varchar')], 2, {
+      rules: { s: { kind: 'fixed', value: '' } },
+      rng: new Mulberry32(4),
+    });
+    expect(rows.map((r) => r[0])).toEqual(['', '']);
+  });
+});
+
+describe('generate - ref rule (equal mode)', () => {
+  it('同じ行の別カラム値をそのままコピー', () => {
+    const rows = generate(
+      [col('src', 'integer'), col('dst', 'integer')],
+      5,
+      {
+        rules: {
+          src: { kind: 'sequence', start: 100, step: 1, zeroPad: false, padWidth: 0 },
+          dst: { kind: 'ref', column: 'src', mode: 'equal' },
+        },
+        rng: new Mulberry32(5),
+      },
+    );
+    for (const r of rows) {
+      expect(r[1]).toBe(r[0]);
+    }
+  });
+
+  it('参照先が NULL なら null を返す', () => {
+    const rows = generate(
+      [col('src', 'varchar'), col('dst', 'varchar')],
+      3,
+      {
+        rules: {
+          src: { kind: 'null' },
+          dst: { kind: 'ref', column: 'src', mode: 'equal' },
+        },
+        rng: new Mulberry32(6),
+      },
+    );
+    for (const r of rows) {
+      expect(r[0]).toBeNull();
+      expect(r[1]).toBeNull();
+    }
+  });
+});
+
+describe('generate - ref rule (greater mode)', () => {
+  it('数値: ref + ランダムオフセット (offsetMin〜offsetMax)', () => {
+    const rows = generate(
+      [col('a', 'integer'), col('b', 'integer')],
+      50,
+      {
+        rules: {
+          a: { kind: 'sequence', start: 0, step: 0, zeroPad: false, padWidth: 0 },
+          b: {
+            kind: 'ref',
+            column: 'a',
+            mode: 'greater',
+            offsetMin: 1,
+            offsetMax: 10,
+            offsetUnit: 'number',
+          },
+        },
+        rng: new Mulberry32(7),
+      },
+    );
+    for (const r of rows) {
+      const diff = (r[1] as number) - (r[0] as number);
+      expect(diff).toBeGreaterThanOrEqual(1);
+      expect(diff).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('date: ref + n 日 (days unit)', () => {
+    const rows = generate(
+      [col('start', 'date'), col('end', 'date')],
+      30,
+      {
+        rules: {
+          start: {
+            kind: 'date_range',
+            min: '2026-01-01',
+            max: '2026-06-30',
+            mode: 'random',
+          },
+          end: {
+            kind: 'ref',
+            column: 'start',
+            mode: 'greater',
+            offsetMin: 1,
+            offsetMax: 7,
+            offsetUnit: 'days',
+          },
+        },
+        rng: new Mulberry32(8),
+      },
+    );
+    for (const r of rows) {
+      const startMs = Date.parse(r[0] as string);
+      const endMs = Date.parse(r[1] as string);
+      const diffDays = (endMs - startMs) / 86_400_000;
+      expect(diffDays).toBeGreaterThanOrEqual(1);
+      expect(diffDays).toBeLessThanOrEqual(7);
+    }
+  });
+
+  it('timestamp: ref + n 時間 (hours unit)', () => {
+    const rows = generate(
+      [col('start_ts', 'timestamp'), col('end_ts', 'timestamp')],
+      20,
+      {
+        rules: {
+          start_ts: {
+            kind: 'timestamp_range',
+            min: '2026-01-01T00:00:00',
+            max: '2026-01-01T12:00:00',
+            mode: 'random',
+          },
+          end_ts: {
+            kind: 'ref',
+            column: 'start_ts',
+            mode: 'greater',
+            offsetMin: 1,
+            offsetMax: 3,
+            offsetUnit: 'hours',
+          },
+        },
+        rng: new Mulberry32(9),
+      },
+    );
+    for (const r of rows) {
+      expect(r[1]).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+      // start < end
+      expect((r[1] as string) > (r[0] as string)).toBe(true);
+    }
+  });
+
+  it('time: ref + n 分 (minutes unit)', () => {
+    const rows = generate(
+      [col('t_in', 'time'), col('t_out', 'time')],
+      10,
+      {
+        rules: {
+          t_in: {
+            kind: 'time_range',
+            min: '09:00:00',
+            max: '17:00:00',
+            mode: 'random',
+          },
+          t_out: {
+            kind: 'ref',
+            column: 't_in',
+            mode: 'greater',
+            offsetMin: 30,
+            offsetMax: 60,
+            offsetUnit: 'minutes',
+          },
+        },
+        rng: new Mulberry32(10),
+      },
+    );
+    for (const r of rows) {
+      const inSec =
+        Number((r[0] as string).slice(0, 2)) * 3600 +
+        Number((r[0] as string).slice(3, 5)) * 60 +
+        Number((r[0] as string).slice(6, 8));
+      const outSec =
+        Number((r[1] as string).slice(0, 2)) * 3600 +
+        Number((r[1] as string).slice(3, 5)) * 60 +
+        Number((r[1] as string).slice(6, 8));
+      const diffMin = (outSec - inSec) / 60;
+      expect(diffMin).toBeGreaterThanOrEqual(30);
+      expect(diffMin).toBeLessThanOrEqual(60);
+    }
+  });
+});
+
+describe('generate - ref rule (less mode)', () => {
+  it('数値: ref - ランダムオフセット', () => {
+    const rows = generate(
+      [col('a', 'integer'), col('b', 'integer')],
+      30,
+      {
+        rules: {
+          a: { kind: 'sequence', start: 1000, step: 0, zeroPad: false, padWidth: 0 },
+          b: {
+            kind: 'ref',
+            column: 'a',
+            mode: 'less',
+            offsetMin: 5,
+            offsetMax: 15,
+            offsetUnit: 'number',
+          },
+        },
+        rng: new Mulberry32(11),
+      },
+    );
+    for (const r of rows) {
+      const diff = (r[0] as number) - (r[1] as number);
+      expect(diff).toBeGreaterThanOrEqual(5);
+      expect(diff).toBeLessThanOrEqual(15);
+    }
+  });
+});
+
+describe('generate - ref rule: ordering enforcement', () => {
+  it('参照先が後方カラムなら throw', () => {
+    expect(() =>
+      generate(
+        [col('a', 'integer'), col('b', 'integer')],
+        1,
+        {
+          rules: {
+            a: { kind: 'ref', column: 'b', mode: 'equal' },
+            b: { kind: 'sequence', start: 1, step: 1, zeroPad: false, padWidth: 0 },
+          },
+          rng: new Mulberry32(12),
+        },
+      ),
+    ).toThrow(/must precede/);
+  });
+});
+
+describe('generate - format rule with J (Joyo kanji)', () => {
+  it('{J} が漢字 1 文字を生成し、その他のリテラルと混在できる', () => {
+    const rows = generate([col('s', 'varchar')], 20, {
+      rules: { s: { kind: 'format', pattern: '名前: {JJJ}' } },
+      rng: new Mulberry32(13),
+    });
+    for (const r of rows) {
+      const v = r[0] as string;
+      expect(v.startsWith('名前: ')).toBe(true);
+      // CJK 統合漢字レンジ (U+4E00 〜 U+9FFF) のチェック
+      const kanjiPart = v.slice('名前: '.length);
+      expect(kanjiPart).toMatch(/^[一-鿿]{3}$/);
+    }
+  });
+
+  it('決定的 (同じ seed なら同じ漢字)', () => {
+    const a = generate([col('s', 'varchar')], 5, {
+      rules: { s: { kind: 'format', pattern: '{JJ}' } },
+      rng: new Mulberry32(99),
+    });
+    const b = generate([col('s', 'varchar')], 5, {
+      rules: { s: { kind: 'format', pattern: '{JJ}' } },
+      rng: new Mulberry32(99),
+    });
+    expect(a).toEqual(b);
+  });
+});

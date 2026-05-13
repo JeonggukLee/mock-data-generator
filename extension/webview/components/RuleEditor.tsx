@@ -1,10 +1,15 @@
 import { useState } from 'react';
+import type { Column } from '../../src/ddl/types.js';
 import type {
   DateRangeRule,
   DateStepUnit,
+  FixedRule,
   FormatRule,
   NumberRangeRule,
   RangeMode,
+  RefMode,
+  RefOffsetUnit,
+  RefRule,
   Rule,
   SequenceRule,
   TemplateSequenceRule,
@@ -64,6 +69,19 @@ export function defaultRuleForKind(kind: RuleKind): Rule {
       };
     case 'value_list':
       return { kind: 'value_list', values: [] };
+    case 'null':
+      return { kind: 'null' };
+    case 'fixed':
+      return { kind: 'fixed', value: '' };
+    case 'ref':
+      return {
+        kind: 'ref',
+        column: '',
+        mode: 'equal',
+        offsetMin: 1,
+        offsetMax: 10,
+        offsetUnit: 'number',
+      };
     case 'default':
       return { kind: 'default' };
   }
@@ -72,9 +90,10 @@ export function defaultRuleForKind(kind: RuleKind): Rule {
 type Props = {
   rule: Rule;
   onChange: (rule: Rule) => void;
+  siblings?: Column[];
 };
 
-export function RuleEditor({ rule, onChange }: Props) {
+export function RuleEditor({ rule, onChange, siblings = [] }: Props) {
   switch (rule.kind) {
     case 'sequence':
       return <SequenceEditor rule={rule} onChange={onChange} />;
@@ -92,6 +111,12 @@ export function RuleEditor({ rule, onChange }: Props) {
       return <TimestampRangeEditor rule={rule} onChange={onChange} />;
     case 'value_list':
       return <ValueListEditor rule={rule} onChange={onChange} />;
+    case 'null':
+      return <span className="hint">常に NULL を出力</span>;
+    case 'fixed':
+      return <FixedEditor rule={rule} onChange={onChange} />;
+    case 'ref':
+      return <RefEditor rule={rule} onChange={onChange} siblings={siblings} />;
     case 'default':
       return <span className="hint">既定値（型に応じた自動生成）</span>;
   }
@@ -191,7 +216,7 @@ function FormatEditor({
       <span className="legend">
         {'{...}内 = フォーマット指定 / 外 = リテラル'}
         <br />
-        A=英大 / a=英小 / 9=数字 / X=英数 / H=ひらがな / K=カタカナ / S=記号
+        A=英大 / a=英小 / 9=数字 / X=英数 / H=ひらがな / K=カタカナ / S=記号 / J=漢字（常用）
       </span>
     </div>
   );
@@ -379,6 +404,134 @@ function TimestampRangeEditor({
       )}
     </div>
   );
+}
+
+function FixedEditor({
+  rule,
+  onChange,
+}: {
+  rule: FixedRule;
+  onChange: (r: Rule) => void;
+}) {
+  return (
+    <div className="editor-inline">
+      <TextField
+        label="固定文"
+        value={rule.value}
+        onChange={(value) => onChange({ ...rule, value })}
+        wide
+      />
+      <span className="legend">
+        SQL では文字列として引用符付きで出力されます
+      </span>
+    </div>
+  );
+}
+
+function RefEditor({
+  rule,
+  onChange,
+  siblings,
+}: {
+  rule: RefRule;
+  onChange: (r: Rule) => void;
+  siblings: Column[];
+}) {
+  const refCol = siblings.find((c) => c.name === rule.column);
+  const baseType = (refCol?.dataType ?? '').split(/\s+/)[0] ?? '';
+  const allowedUnits = unitOptionsForRefType(baseType);
+  const effectiveUnit: RefOffsetUnit =
+    allowedUnits.find((o) => o.value === rule.offsetUnit)?.value
+    ?? allowedUnits[0]?.value
+    ?? 'number';
+  return (
+    <div className="editor-inline">
+      <label className="field">
+        <span>参照カラム</span>
+        <select
+          value={rule.column}
+          onChange={(e) => onChange({ ...rule, column: e.target.value })}
+        >
+          <option value="">（選択）</option>
+          {siblings.map((c) => (
+            <option key={c.name} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        <span>比較</span>
+        <select
+          value={rule.mode}
+          onChange={(e) => onChange({ ...rule, mode: e.target.value as RefMode })}
+        >
+          <option value="equal">同値</option>
+          <option value="greater">より大きい</option>
+          <option value="less">より小さい</option>
+        </select>
+      </label>
+      {rule.mode !== 'equal' && (
+        <>
+          <NumberField
+            label="オフセット最小"
+            value={rule.offsetMin ?? 1}
+            onChange={(offsetMin) => onChange({ ...rule, offsetMin })}
+          />
+          <NumberField
+            label="オフセット最大"
+            value={rule.offsetMax ?? 10}
+            onChange={(offsetMax) => onChange({ ...rule, offsetMax })}
+          />
+          <label className="field">
+            <span>単位</span>
+            <select
+              value={effectiveUnit}
+              onChange={(e) =>
+                onChange({ ...rule, offsetUnit: e.target.value as RefOffsetUnit })
+              }
+            >
+              {allowedUnits.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
+      )}
+    </div>
+  );
+}
+
+function unitOptionsForRefType(
+  baseType: string,
+): ReadonlyArray<{ value: RefOffsetUnit; label: string }> {
+  const numTypes = ['smallint', 'integer', 'bigint', 'numeric', 'decimal', 'real', 'serial', 'double'];
+  if (numTypes.includes(baseType)) return [{ value: 'number', label: '数値' }];
+  if (baseType === 'date') {
+    return [
+      { value: 'days', label: '日' },
+      { value: 'months', label: '月' },
+      { value: 'years', label: '年' },
+    ];
+  }
+  if (baseType === 'time') {
+    return [
+      { value: 'seconds', label: '秒' },
+      { value: 'minutes', label: '分' },
+      { value: 'hours', label: '時' },
+    ];
+  }
+  if (baseType === 'timestamp') {
+    return [
+      { value: 'seconds', label: '秒' },
+      { value: 'minutes', label: '分' },
+      { value: 'hours', label: '時' },
+      { value: 'days', label: '日' },
+    ];
+  }
+  return [{ value: 'number', label: '数値' }];
 }
 
 const DATE_STEP_UNIT_OPTIONS: ReadonlyArray<{ value: DateStepUnit; label: string }> = [

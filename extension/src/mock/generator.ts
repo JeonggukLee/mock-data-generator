@@ -1,11 +1,13 @@
 import type { Column } from '../ddl/types.js';
 import type {
   DateRangeRule,
+  RefRule,
   Rule,
   TimeRangeRule,
   TimestampRangeRule,
 } from './rules.js';
 import { TEMPLATE_PLACEHOLDER } from './rules.js';
+import { JOYO_KANJI } from './joyoKanji.js';
 
 export type RawValue = string | number | boolean | null;
 
@@ -42,6 +44,13 @@ export type GenerateOptions = {
   rng?: Rng;
 };
 
+type GenerateCtx = {
+  rowIdx: number;
+  rng: Rng;
+  resolved: Map<string, RawValue>;
+  columnByName: Map<string, Column>;
+};
+
 export function generate(
   columns: Column[],
   rowCount: number,
@@ -50,25 +59,32 @@ export function generate(
   const rng = options.rng ?? new Mulberry32(Date.now() >>> 0);
   const rules = options.rules ?? {};
   const nullRates = options.nullRate ?? {};
+  const columnByName = new Map(columns.map((c) => [c.name, c]));
 
   const rows: RawValue[][] = [];
   for (let rowIdx = 0; rowIdx < rowCount; rowIdx++) {
     const row: RawValue[] = [];
+    const resolved = new Map<string, RawValue>();
+    const ctx: GenerateCtx = { rowIdx, rng, resolved, columnByName };
     for (const col of columns) {
       const rate = nullRates[col.name] ?? 0;
       if (!col.notNull && rate > 0 && rng.nextFloat() < rate) {
         row.push(null);
+        resolved.set(col.name, null);
         continue;
       }
       const rule: Rule = rules[col.name] ?? { kind: 'default' };
-      row.push(valueFor(col, rule, rowIdx, rng));
+      const value = valueFor(col, rule, ctx);
+      row.push(value);
+      resolved.set(col.name, value);
     }
     rows.push(row);
   }
   return rows;
 }
 
-function valueFor(col: Column, rule: Rule, rowIdx: number, rng: Rng): RawValue {
+function valueFor(col: Column, rule: Rule, ctx: GenerateCtx): RawValue {
+  const { rowIdx, rng } = ctx;
   switch (rule.kind) {
     case 'sequence':
       return formatSeq(rule.start + rule.step * rowIdx, rule.zeroPad, rule.padWidth);
@@ -94,6 +110,12 @@ function valueFor(col: Column, rule: Rule, rowIdx: number, rng: Rng): RawValue {
       if (rule.values.length === 0) return null;
       return rule.values[rng.nextInt(rule.values.length)] ?? null;
     }
+    case 'null':
+      return null;
+    case 'fixed':
+      return rule.value;
+    case 'ref':
+      return refValue(rule, ctx);
     case 'default':
       return defaultForColumn(col, rng);
   }
@@ -145,6 +167,8 @@ function pickFormatChar(ch: string, rng: Rng): string {
       return pickKatakana(rng);
     case 'S':
       return pickFromPool(POOLS.symbol, rng);
+    case 'J':
+      return JOYO_KANJI[rng.nextInt(JOYO_KANJI.length)] ?? '';
     default:
       return ch;
   }
@@ -348,6 +372,69 @@ function addMonths(d: Date, n: number): Date {
 
 function addYears(d: Date, n: number): Date {
   return addMonths(d, n * 12);
+}
+
+function refValue(rule: RefRule, ctx: GenerateCtx): RawValue {
+  if (!ctx.resolved.has(rule.column)) {
+    throw new Error(
+      `Reference column "${rule.column}" must precede the current column in the table definition`,
+    );
+  }
+  const refRaw = ctx.resolved.get(rule.column);
+  if (refRaw === null || refRaw === undefined) return null;
+
+  if (rule.mode === 'equal') return refRaw;
+
+  const offsetMin = Math.floor(rule.offsetMin ?? 1);
+  const offsetMax = Math.floor(rule.offsetMax ?? 10);
+  const [lo, hi] = offsetMin <= offsetMax ? [offsetMin, offsetMax] : [offsetMax, offsetMin];
+  const offset = ctx.rng.nextInt(hi - lo + 1) + lo;
+  const signed = rule.mode === 'greater' ? offset : -offset;
+  const unit = rule.offsetUnit ?? 'number';
+
+  if (unit === 'number') {
+    const num = typeof refRaw === 'number' ? refRaw : Number(refRaw);
+    if (!Number.isFinite(num)) {
+      throw new Error(
+        `Reference column "${rule.column}" value is not numeric (got ${String(refRaw)})`,
+      );
+    }
+    return num + signed;
+  }
+
+  const refStr = String(refRaw);
+
+  if (unit === 'days' || unit === 'months' || unit === 'years') {
+    const refMs = Date.parse(refStr);
+    if (!Number.isFinite(refMs)) {
+      throw new Error(`Reference column "${rule.column}" is not a date (got "${refStr}")`);
+    }
+    const refDate = new Date(refMs);
+    const target =
+      unit === 'days'
+        ? addDays(refDate, signed)
+        : unit === 'months'
+          ? addMonths(refDate, signed)
+          : addYears(refDate, signed);
+    return toIsoDate(target.getTime());
+  }
+
+  // seconds / minutes / hours
+  const unitSec =
+    unit === 'seconds' ? 1 : unit === 'minutes' ? 60 : 3600;
+  const offsetSec = signed * unitSec;
+
+  // ref is HH:MM:SS time
+  if (/^\d{2}:\d{2}:\d{2}$/.test(refStr)) {
+    const refSec = hmsToSeconds(refStr);
+    return secondsToHms(refSec + offsetSec);
+  }
+  // ref is YYYY-MM-DD HH:MM:SS or ISO timestamp
+  const refMs = parseDatetimeLocal(refStr.replace(' ', 'T'));
+  if (!Number.isFinite(refMs)) {
+    throw new Error(`Reference column "${rule.column}" is not a timestamp (got "${refStr}")`);
+  }
+  return formatTimestamp(refMs + offsetSec * 1000);
 }
 
 function defaultForColumn(col: Column, rng: Rng): RawValue {
