@@ -1,5 +1,10 @@
 import type { Column } from '../ddl/types.js';
-import type { Rule } from './rules.js';
+import type {
+  DateRangeRule,
+  Rule,
+  TimeRangeRule,
+  TimestampRangeRule,
+} from './rules.js';
 import { TEMPLATE_PLACEHOLDER } from './rules.js';
 
 export type RawValue = string | number | boolean | null;
@@ -81,6 +86,10 @@ function valueFor(col: Column, rule: Rule, rowIdx: number, rng: Rng): RawValue {
       return numberFromRange(rule, rowIdx, rng);
     case 'date_range':
       return dateFromRange(rule, rowIdx, rng);
+    case 'time_range':
+      return timeFromRange(rule, rowIdx, rng);
+    case 'timestamp_range':
+      return timestampFromRange(rule, rowIdx, rng);
     case 'value_list': {
       if (rule.values.length === 0) return null;
       return rule.values[rng.nextInt(rule.values.length)] ?? null;
@@ -190,31 +199,155 @@ function numberFromRange(
   return Math.round(raw * factor) / factor;
 }
 
-function dateFromRange(
-  rule: { min: string; max: string; mode: 'random' | 'increment' | 'decrement'; step?: number },
-  rowIdx: number,
-  rng: Rng,
-): string {
+function dateFromRange(rule: DateRangeRule, rowIdx: number, rng: Rng): string {
   const MS_PER_DAY = 86_400_000;
   const minMs = Date.parse(rule.min);
   const maxMs = Date.parse(rule.max);
-  const [lo, hi] = minMs <= maxMs ? [minMs, maxMs] : [maxMs, minMs];
+  const [loMs, hiMs] = minMs <= maxMs ? [minMs, maxMs] : [maxMs, minMs];
   if (rule.mode === 'random') {
-    const span = hi - lo;
-    const pickMs = lo + Math.floor(rng.nextFloat() * (span + 1));
+    const span = hiMs - loMs;
+    const pickMs = loMs + Math.floor(rng.nextFloat() * (span + 1));
     return toIsoDate(pickMs);
   }
-  const stepDays = Math.max(1, Math.floor(rule.step ?? 1));
-  const spanDays = Math.floor((hi - lo) / MS_PER_DAY);
-  const slots = Math.floor(spanDays / stepDays) + 1;
+  const step = Math.max(1, Math.floor(rule.step ?? 1));
+  const unit = rule.stepUnit ?? 'days';
+  const lo = new Date(loMs);
+  const hi = new Date(hiMs);
+  if (unit === 'days') {
+    const spanDays = Math.floor((hiMs - loMs) / MS_PER_DAY);
+    const slots = Math.floor(spanDays / step) + 1;
+    const idx = rowIdx % slots;
+    const target = rule.mode === 'increment' ? addDays(lo, idx * step) : addDays(hi, -idx * step);
+    return toIsoDate(target.getTime());
+  }
+  if (unit === 'months') {
+    const loYM = lo.getUTCFullYear() * 12 + lo.getUTCMonth();
+    const hiYM = hi.getUTCFullYear() * 12 + hi.getUTCMonth();
+    const slots = Math.floor((hiYM - loYM) / step) + 1;
+    const idx = rowIdx % slots;
+    const target = rule.mode === 'increment' ? addMonths(lo, idx * step) : addMonths(hi, -idx * step);
+    return toIsoDate(target.getTime());
+  }
+  // years
+  const slots = Math.floor((hi.getUTCFullYear() - lo.getUTCFullYear()) / step) + 1;
   const idx = rowIdx % slots;
-  const offsetMs = idx * stepDays * MS_PER_DAY;
-  const ms = rule.mode === 'increment' ? lo + offsetMs : hi - offsetMs;
-  return toIsoDate(ms);
+  const target = rule.mode === 'increment' ? addYears(lo, idx * step) : addYears(hi, -idx * step);
+  return toIsoDate(target.getTime());
 }
+
+function timeFromRange(rule: TimeRangeRule, rowIdx: number, rng: Rng): string {
+  const minSec = hmsToSeconds(rule.min);
+  const maxSec = hmsToSeconds(rule.max);
+  const [lo, hi] = minSec <= maxSec ? [minSec, maxSec] : [maxSec, minSec];
+  if (rule.mode === 'random') {
+    const pick = lo + Math.floor(rng.nextFloat() * (hi - lo + 1));
+    return secondsToHms(pick);
+  }
+  const unitSec = TIME_UNIT_SECONDS[rule.stepUnit ?? 'seconds'];
+  const stepSec = Math.max(1, Math.floor(rule.step ?? 1) * unitSec);
+  const slots = Math.floor((hi - lo) / stepSec) + 1;
+  const idx = rowIdx % slots;
+  const offset = idx * stepSec;
+  const sec = rule.mode === 'increment' ? lo + offset : hi - offset;
+  return secondsToHms(sec);
+}
+
+function timestampFromRange(
+  rule: TimestampRangeRule,
+  rowIdx: number,
+  rng: Rng,
+): string {
+  const minMs = parseDatetimeLocal(rule.min);
+  const maxMs = parseDatetimeLocal(rule.max);
+  const [lo, hi] = minMs <= maxMs ? [minMs, maxMs] : [maxMs, minMs];
+  if (rule.mode === 'random') {
+    const pick = lo + Math.floor(rng.nextFloat() * (hi - lo + 1));
+    return formatTimestamp(pick);
+  }
+  const unitMs = TIMESTAMP_UNIT_MS[rule.stepUnit ?? 'seconds'];
+  const stepMs = Math.max(1, Math.floor(rule.step ?? 1) * unitMs);
+  const slots = Math.floor((hi - lo) / stepMs) + 1;
+  const idx = rowIdx % slots;
+  const offset = idx * stepMs;
+  const ms = rule.mode === 'increment' ? lo + offset : hi - offset;
+  return formatTimestamp(ms);
+}
+
+const TIME_UNIT_SECONDS = { seconds: 1, minutes: 60, hours: 3600 } as const;
+const TIMESTAMP_UNIT_MS = {
+  seconds: 1000,
+  minutes: 60_000,
+  hours: 3_600_000,
+  days: 86_400_000,
+} as const;
 
 function toIsoDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
+}
+
+function formatTimestamp(ms: number): string {
+  const iso = new Date(ms).toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
+}
+
+// `YYYY-MM-DDTHH:MM:SS` または `YYYY-MM-DD HH:MM:SS` を UTC ms として解釈。
+// HTML <input type="datetime-local"> の値はタイムゾーン情報を持たないため、
+// Date.parse は実行環境のローカル TZ で解釈してしまう。ここでは wall-clock を
+// そのまま保持するため UTC として扱う。
+function parseDatetimeLocal(s: string): number {
+  const [datePart = '', timePart = '00:00:00'] = s.split(/[T ]/);
+  const [y, mo, d] = datePart.split('-').map((p) => Number(p));
+  const [h, mi, se] = timePart.split(':').map((p) => Number(p));
+  return Date.UTC(y ?? 1970, (mo ?? 1) - 1, d ?? 1, h ?? 0, mi ?? 0, se ?? 0);
+}
+
+function hmsToSeconds(hms: string): number {
+  const [h, m, s] = hms.split(':').map((p) => Number(p));
+  return (h ?? 0) * 3600 + (m ?? 0) * 60 + (s ?? 0);
+}
+
+function secondsToHms(totalSeconds: number): string {
+  const s = ((totalSeconds % 86400) + 86400) % 86400;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${pad2(h)}:${pad2(m)}:${pad2(sec)}`;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function addDays(d: Date, n: number): Date {
+  const copy = new Date(d.getTime());
+  copy.setUTCDate(d.getUTCDate() + n);
+  return copy;
+}
+
+function addMonths(d: Date, n: number): Date {
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + n;
+  const day = d.getUTCDate();
+  const targetYear = year + Math.floor(month / 12);
+  const targetMonth = ((month % 12) + 12) % 12;
+  // clamp day to last day of target month
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const finalDay = Math.min(day, lastDay);
+  return new Date(
+    Date.UTC(
+      targetYear,
+      targetMonth,
+      finalDay,
+      d.getUTCHours(),
+      d.getUTCMinutes(),
+      d.getUTCSeconds(),
+      d.getUTCMilliseconds(),
+    ),
+  );
+}
+
+function addYears(d: Date, n: number): Date {
+  return addMonths(d, n * 12);
 }
 
 function defaultForColumn(col: Column, rng: Rng): RawValue {

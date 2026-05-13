@@ -15,6 +15,8 @@ const RULE_KIND_LABELS: Record<RuleKind, string> = {
   format: 'フォーマット指定',
   number_range: '数値範囲',
   date_range: '日付範囲',
+  time_range: '時刻範囲',
+  timestamp_range: 'タイムスタンプ範囲',
   value_list: '値リスト',
 };
 
@@ -106,6 +108,16 @@ function detectConflict(col: Column, rule: Rule): string | null {
     case 'date_range':
       if (!dateTypes.includes(baseType)) {
         return `日付範囲は日付型に推奨（現在の型: ${col.dataType}）`;
+      }
+      return null;
+    case 'time_range':
+      if (!['time', 'timestamp'].includes(baseType)) {
+        return `時刻範囲は time / timestamp 型に推奨（現在の型: ${col.dataType}）`;
+      }
+      return null;
+    case 'timestamp_range':
+      if (baseType !== 'timestamp') {
+        return `タイムスタンプ範囲は timestamp 型に推奨（現在の型: ${col.dataType}）`;
       }
       return null;
     case 'format':
