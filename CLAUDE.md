@@ -52,11 +52,14 @@ The generator dispatches per-`Rule.kind`. All randomness flows through the `Rng`
 
 ### Rule semantics (non-obvious)
 
-- **`format` pattern**: characters inside `{...}` are format placeholders (`A` a `9` `X` `H` `K` `S`); characters outside are literal. `{A}9` → random uppercase + literal `9`. An unclosed `{` is treated as a group running to end of string. See `renderFormat` in `src/mock/generator.ts`.
+- **`format` pattern**: characters inside `{...}` are format placeholders (`A` a `9` `X` `H` `K` `S` `J`); characters outside are literal. `J` picks from the Joyo kanji set in `src/mock/joyoKanji.ts`. `{A}9` → random uppercase + literal `9`. An unclosed `{` is treated as a group running to end of string. See `renderFormat` in `src/mock/generator.ts`.
 - **`template_sequence.template`**: the literal substring `{N}` is the sequence placeholder; all other characters are literal. `{N}` can appear multiple times or zero times.
 - **`sequence` / `template_sequence`**: zero-padding is gated by `zeroPad: boolean`; `padWidth` is ignored when `zeroPad` is false. Values longer than `padWidth` are not truncated.
 - **`number_range` / `date_range`**: `mode: 'random' | 'increment' | 'decrement'`. Sequence modes use `step` (date uses days) and **wrap** within `[min, max]` via `rowIdx % slots`.
 - **`value_list` input parsing** (`src/mock/valueList.ts`): comma-separated with backslash escapes — `\,` → literal `,`, `\\` → literal `\`. Parser/serializer must round-trip; the editor uses both.
+- **`ref` rule (cross-column)**: requires the referenced column to appear *before* the current column in the DDL. Generator passes a `GenerateCtx.resolved: Map<colName, value>` through `valueFor`; ref handler looks up the value and throws if unresolved. `mode: 'equal' | 'greater' | 'less'`; for greater/less, offset is `[offsetMin, offsetMax]` random integer with type-appropriate unit (`'number'` / `'days'`/`'months'`/`'years'` / `'seconds'`/`'minutes'`/`'hours'`). Output format matches the referenced value's format (e.g., ref to a `HH:MM:SS` → output is `HH:MM:SS`).
+- **`null` rule**: always outputs `null`. Distinct from `nullRate` option which only sometimes returns null.
+- **`fixed` rule**: outputs `rule.value` as-is. Quoted in SQL like any string.
 
 ### Tests
 

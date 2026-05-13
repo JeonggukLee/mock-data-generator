@@ -18,6 +18,9 @@ const RULE_KIND_LABELS: Record<RuleKind, string> = {
   time_range: '時刻範囲',
   timestamp_range: 'タイムスタンプ範囲',
   value_list: '値リスト',
+  null: '生成しない (NULL)',
+  fixed: '固定文',
+  ref: '別カラム値参照',
 };
 
 export function ColumnRuleTable({ columns, rules, onChange }: Props) {
@@ -33,9 +36,9 @@ export function ColumnRuleTable({ columns, rules, onChange }: Props) {
         </tr>
       </thead>
       <tbody>
-        {columns.map((col) => {
+        {columns.map((col, colIdx) => {
           const rule = rules[col.name] ?? { kind: 'default' };
-          const warning = detectConflict(col, rule);
+          const warning = detectConflict(col, rule, columns, colIdx);
           return (
             <tr key={col.name}>
               <td className="col-name">{col.name}</td>
@@ -64,6 +67,7 @@ export function ColumnRuleTable({ columns, rules, onChange }: Props) {
                 <RuleEditor
                   rule={rule}
                   onChange={(next) => onChange(col.name, next)}
+                  siblings={columns.filter((c) => c.name !== col.name)}
                 />
                 {warning && <div className="warning">⚠ {warning}</div>}
               </td>
@@ -93,7 +97,12 @@ function renderConstraints(col: Column): string {
   return parts.join(' / ') || '-';
 }
 
-function detectConflict(col: Column, rule: Rule): string | null {
+function detectConflict(
+  col: Column,
+  rule: Rule,
+  allColumns: Column[],
+  colIdx: number,
+): string | null {
   const baseType = col.dataType.split(/\s+/)[0] ?? '';
   const stringTypes = ['char', 'varchar', 'text'];
   const numberTypes = ['smallint', 'integer', 'bigint', 'numeric', 'decimal', 'real', 'serial', 'double'];
@@ -144,6 +153,33 @@ function detectConflict(col: Column, rule: Rule): string | null {
       }
       return null;
     }
+    case 'fixed': {
+      const precision = col.size.precision;
+      if (
+        stringTypes.includes(baseType) &&
+        precision !== undefined &&
+        rule.value.length > precision
+      ) {
+        return `固定文 "${rule.value}" が ${precision} 文字を超えています`;
+      }
+      return null;
+    }
+    case 'ref': {
+      if (!rule.column) return '参照カラムが未選択です';
+      const refIdx = allColumns.findIndex((c) => c.name === rule.column);
+      if (refIdx === -1) {
+        return `参照カラム "${rule.column}" が存在しません`;
+      }
+      if (refIdx >= colIdx) {
+        return `参照カラム "${rule.column}" は本カラムより前に定義されている必要があります`;
+      }
+      return null;
+    }
+    case 'null':
+      if (col.notNull) {
+        return 'NOT NULL カラムに NULL を出力しようとしています';
+      }
+      return null;
     case 'default':
       return null;
   }

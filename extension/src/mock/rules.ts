@@ -69,6 +69,35 @@ export type ValueListRule = {
   values: ReadonlyArray<string | number | boolean | null>;
 };
 
+export type NullRule = {
+  kind: 'null';
+};
+
+export type FixedRule = {
+  kind: 'fixed';
+  value: string;
+};
+
+export type RefMode = 'equal' | 'greater' | 'less';
+
+export type RefOffsetUnit =
+  | 'number'   // 数値オフセット
+  | 'days'
+  | 'months'
+  | 'years'
+  | 'seconds'
+  | 'minutes'
+  | 'hours';
+
+export type RefRule = {
+  kind: 'ref';
+  column: string;             // 参照先カラム名
+  mode: RefMode;
+  offsetMin?: number;         // mode !== 'equal' のとき必須（既定 1）
+  offsetMax?: number;         // mode !== 'equal' のとき必須（既定 10）
+  offsetUnit?: RefOffsetUnit; // 参照先型に応じた単位
+};
+
 export type DefaultRule = {
   kind: 'default';
 };
@@ -82,6 +111,9 @@ export type Rule =
   | TimeRangeRule
   | TimestampRangeRule
   | ValueListRule
+  | NullRule
+  | FixedRule
+  | RefRule
   | DefaultRule;
 
 export const TEMPLATE_PLACEHOLDER = '{N}';
