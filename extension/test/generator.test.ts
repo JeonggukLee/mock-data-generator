@@ -1221,3 +1221,171 @@ describe('generate - format rule with J (Joyo kanji)', () => {
     expect(a).toEqual(b);
   });
 });
+
+describe('Issue reproduction: ref rule offsetUnit と参照値型のミスマッチ', () => {
+  // PR #11 のバグ: offsetUnit が rule に保存された値のまま固定で、参照カラムを切り替えても
+  // UI 表示は allowedUnits の先頭にフォールバックする一方、rule.offsetUnit は古いまま残り、
+  // 計算段で型ミスマッチが起きて throw。
+  //
+  // 修正後は参照値の実形状で計算分岐する。
+
+  it('offsetUnit="number" でも参照値が date 文字列なら days 扱いで計算（無音フォールバック）', () => {
+    const rows = generate(
+      [col('d', 'date'), col('t', 'timestamp')],
+      5,
+      {
+        rules: {
+          d: {
+            kind: 'date_range',
+            min: '2026-02-21',
+            max: '2026-02-21',
+            mode: 'random',
+          },
+          t: {
+            kind: 'ref',
+            column: 'd',
+            mode: 'greater',
+            offsetMin: 1,
+            offsetMax: 1,
+            offsetUnit: 'number',
+          },
+        },
+        rng: new Mulberry32(1),
+      },
+    );
+    // throw せず、ref(2026-02-21) + 1 day = 2026-02-22 が全行で出る
+    for (const r of rows) {
+      expect(r[1]).toBe('2026-02-22');
+    }
+  });
+
+  it('offsetUnit="days" で参照値が number なら number 扱いで計算', () => {
+    const rows = generate(
+      [col('a', 'integer'), col('b', 'integer')],
+      5,
+      {
+        rules: {
+          a: { kind: 'sequence', start: 100, step: 0, zeroPad: false, padWidth: 0 },
+          b: {
+            kind: 'ref',
+            column: 'a',
+            mode: 'greater',
+            offsetMin: 5,
+            offsetMax: 5,
+            offsetUnit: 'days', // mismatched with number value
+          },
+        },
+        rng: new Mulberry32(2),
+      },
+    );
+    for (const r of rows) {
+      expect(r[1]).toBe(105);
+    }
+  });
+
+  it('offsetUnit="seconds" で参照値が date なら days にフォールバック', () => {
+    const rows = generate(
+      [col('d', 'date'), col('d2', 'date')],
+      3,
+      {
+        rules: {
+          d: {
+            kind: 'date_range',
+            min: '2026-03-15',
+            max: '2026-03-15',
+            mode: 'random',
+          },
+          d2: {
+            kind: 'ref',
+            column: 'd',
+            mode: 'greater',
+            offsetMin: 2,
+            offsetMax: 2,
+            offsetUnit: 'seconds', // mismatched with date value
+          },
+        },
+        rng: new Mulberry32(3),
+      },
+    );
+    for (const r of rows) {
+      expect(r[1]).toBe('2026-03-17');
+    }
+  });
+
+  it('整合: offsetUnit="days" で参照値が date なら従来通り', () => {
+    const rows = generate(
+      [col('d', 'date'), col('d2', 'date')],
+      1,
+      {
+        rules: {
+          d: {
+            kind: 'date_range',
+            min: '2026-06-10',
+            max: '2026-06-10',
+            mode: 'random',
+          },
+          d2: {
+            kind: 'ref',
+            column: 'd',
+            mode: 'greater',
+            offsetMin: 3,
+            offsetMax: 3,
+            offsetUnit: 'days',
+          },
+        },
+        rng: new Mulberry32(4),
+      },
+    );
+    expect(rows[0]?.[1]).toBe('2026-06-13');
+  });
+
+  it('整合: offsetUnit="hours" で参照値が timestamp なら従来通り', () => {
+    const rows = generate(
+      [col('ts', 'timestamp'), col('ts2', 'timestamp')],
+      1,
+      {
+        rules: {
+          ts: {
+            kind: 'timestamp_range',
+            min: '2026-04-01T10:00:00',
+            max: '2026-04-01T10:00:00',
+            mode: 'random',
+          },
+          ts2: {
+            kind: 'ref',
+            column: 'ts',
+            mode: 'greater',
+            offsetMin: 2,
+            offsetMax: 2,
+            offsetUnit: 'hours',
+          },
+        },
+        rng: new Mulberry32(5),
+      },
+    );
+    expect(rows[0]?.[1]).toBe('2026-04-01 12:00:00');
+  });
+
+  it('unknown shape: 解釈不能な文字列を参照したら明確に throw', () => {
+    expect(() =>
+      generate(
+        [col('s', 'varchar'), col('s2', 'varchar')],
+        1,
+        {
+          rules: {
+            s: { kind: 'fixed', value: 'hello' },
+            s2: {
+              kind: 'ref',
+              column: 's',
+              mode: 'greater',
+              offsetMin: 1,
+              offsetMax: 1,
+              offsetUnit: 'number',
+            },
+          },
+          rng: new Mulberry32(6),
+        },
+      ),
+    ).toThrow(/解釈できません|cannot be interpreted/);
+  });
+});

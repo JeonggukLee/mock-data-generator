@@ -374,6 +374,26 @@ function addYears(d: Date, n: number): Date {
   return addMonths(d, n * 12);
 }
 
+type RefValueShape = 'number' | 'date' | 'time' | 'timestamp' | 'unknown';
+
+const REF_COMPATIBLE_UNITS: Record<RefValueShape, ReadonlyArray<RefRule['offsetUnit']>> = {
+  number: ['number'],
+  date: ['days', 'months', 'years'],
+  time: ['seconds', 'minutes', 'hours'],
+  timestamp: ['seconds', 'minutes', 'hours', 'days'],
+  unknown: [],
+};
+
+function detectRefValueShape(v: RawValue): RefValueShape {
+  if (typeof v === 'number') return 'number';
+  if (typeof v !== 'string') return 'unknown';
+  if (/^\d{2}:\d{2}:\d{2}$/.test(v)) return 'time';
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/.test(v)) return 'timestamp';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'date';
+  if (v.trim() !== '' && Number.isFinite(Number(v))) return 'number';
+  return 'unknown';
+}
+
 function refValue(rule: RefRule, ctx: GenerateCtx): RawValue {
   if (!ctx.resolved.has(rule.column)) {
     throw new Error(
@@ -390,51 +410,57 @@ function refValue(rule: RefRule, ctx: GenerateCtx): RawValue {
   const [lo, hi] = offsetMin <= offsetMax ? [offsetMin, offsetMax] : [offsetMax, offsetMin];
   const offset = ctx.rng.nextInt(hi - lo + 1) + lo;
   const signed = rule.mode === 'greater' ? offset : -offset;
-  const unit = rule.offsetUnit ?? 'number';
 
-  if (unit === 'number') {
+  // 参照値の実形状を判別し、declared offsetUnit が互換でない場合は形状の既定単位にフォールバック。
+  // これにより UI で参照カラムを切り替えた後に offsetUnit が古いまま残っていても無音で正しく動く。
+  const shape = detectRefValueShape(refRaw);
+  if (shape === 'unknown') {
+    throw new Error(
+      `Reference column "${rule.column}" value "${String(refRaw)}" の形状を解釈できません (数値/日付/時刻/タイムスタンプいずれにも該当せず)`,
+    );
+  }
+  const compatible = REF_COMPATIBLE_UNITS[shape];
+  const unit = rule.offsetUnit && compatible.includes(rule.offsetUnit)
+    ? rule.offsetUnit
+    : compatible[0]!;
+
+  if (shape === 'number') {
     const num = typeof refRaw === 'number' ? refRaw : Number(refRaw);
-    if (!Number.isFinite(num)) {
-      throw new Error(
-        `Reference column "${rule.column}" value is not numeric (got ${String(refRaw)})`,
-      );
-    }
     return num + signed;
   }
 
   const refStr = String(refRaw);
 
-  if (unit === 'days' || unit === 'months' || unit === 'years') {
+  if (shape === 'date') {
     const refMs = Date.parse(refStr);
-    if (!Number.isFinite(refMs)) {
-      throw new Error(`Reference column "${rule.column}" is not a date (got "${refStr}")`);
-    }
     const refDate = new Date(refMs);
     const target =
-      unit === 'days'
-        ? addDays(refDate, signed)
-        : unit === 'months'
-          ? addMonths(refDate, signed)
-          : addYears(refDate, signed);
+      unit === 'months'
+        ? addMonths(refDate, signed)
+        : unit === 'years'
+          ? addYears(refDate, signed)
+          : addDays(refDate, signed); // default for date shape
     return toIsoDate(target.getTime());
   }
 
-  // seconds / minutes / hours
-  const unitSec =
-    unit === 'seconds' ? 1 : unit === 'minutes' ? 60 : 3600;
-  const offsetSec = signed * unitSec;
-
-  // ref is HH:MM:SS time
-  if (/^\d{2}:\d{2}:\d{2}$/.test(refStr)) {
+  if (shape === 'time') {
+    const unitSec =
+      unit === 'hours' ? 3600 : unit === 'minutes' ? 60 : 1; // default seconds
     const refSec = hmsToSeconds(refStr);
-    return secondsToHms(refSec + offsetSec);
+    return secondsToHms(refSec + signed * unitSec);
   }
-  // ref is YYYY-MM-DD HH:MM:SS or ISO timestamp
+
+  // shape === 'timestamp'
+  const unitMs =
+    unit === 'days'
+      ? 86_400_000
+      : unit === 'hours'
+        ? 3_600_000
+        : unit === 'minutes'
+          ? 60_000
+          : 1000; // default seconds
   const refMs = parseDatetimeLocal(refStr.replace(' ', 'T'));
-  if (!Number.isFinite(refMs)) {
-    throw new Error(`Reference column "${rule.column}" is not a timestamp (got "${refStr}")`);
-  }
-  return formatTimestamp(refMs + offsetSec * 1000);
+  return formatTimestamp(refMs + signed * unitMs);
 }
 
 function defaultForColumn(col: Column, rng: Rng): RawValue {

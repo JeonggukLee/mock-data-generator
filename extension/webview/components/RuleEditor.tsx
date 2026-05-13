@@ -450,7 +450,17 @@ function RefEditor({
         <span>参照カラム</span>
         <select
           value={rule.column}
-          onChange={(e) => onChange({ ...rule, column: e.target.value })}
+          onChange={(e) => {
+            const newColumn = e.target.value;
+            const newRefCol = siblings.find((c) => c.name === newColumn);
+            const newBase = (newRefCol?.dataType ?? '').split(/\s+/)[0] ?? '';
+            const newAllowed = unitOptionsForRefType(newBase);
+            const stillValid = newAllowed.some((o) => o.value === rule.offsetUnit);
+            const newUnit = stillValid
+              ? rule.offsetUnit
+              : (newAllowed[0]?.value ?? 'number');
+            onChange({ ...rule, column: newColumn, offsetUnit: newUnit });
+          }}
         >
           <option value="">（選択）</option>
           {siblings.map((c) => (
