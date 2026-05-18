@@ -18,6 +18,10 @@ export type TemplateSequenceRule = {
 export type FormatRule = {
   kind: 'format';
   pattern: string;
+  // 名前付きリスト辞書。パターン内 `{name}` の body がここのキーと完全一致したら、
+  // 配列からランダムに 1 要素を抽選する。未マッチなら従来通り A/a/9/X/H/K/S/J の
+  // フォーマット文字として解釈する。
+  lists?: Record<string, ReadonlyArray<string>>;
 };
 
 export type RangeMode = 'random' | 'increment' | 'decrement';

@@ -381,3 +381,40 @@ table.grid .actions-cell {
   gap: 6px;
   font-size: 0.9rem;
 }
+
+.editor-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.format-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px dashed var(--vscode-editorWidget-border, #44444433);
+  border-radius: 2px;
+}
+
+.format-lists-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--vscode-descriptionForeground);
+}
+
+.format-list-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.format-list-row .field input {
+  width: 100px;
+}
+
+.format-list-row .field.wide input {
+  width: 360px;
+}

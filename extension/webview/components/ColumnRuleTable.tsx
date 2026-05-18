@@ -202,7 +202,7 @@ function estimateMaxLength(rule: Rule): number {
       return literalLength + placeholderCount * numWidth;
     }
     case 'format':
-      return estimateFormatLength(rule.pattern);
+      return estimateFormatLength(rule.pattern, rule.lists);
     default:
       return 0;
   }
@@ -219,14 +219,28 @@ function countOccurrences(s: string, needle: string): number {
   return count;
 }
 
-function estimateFormatLength(pattern: string): number {
+function estimateFormatLength(
+  pattern: string,
+  lists?: Record<string, ReadonlyArray<string>>,
+): number {
   let length = 0;
   let i = 0;
   while (i < pattern.length) {
     if (pattern[i] === '{') {
       const close = pattern.indexOf('}', i + 1);
       const end = close === -1 ? pattern.length : close;
-      length += end - (i + 1);
+      const body = pattern.slice(i + 1, end);
+      if (lists && Object.prototype.hasOwnProperty.call(lists, body)) {
+        // リスト参照は配列内の最長値で見積もる
+        let maxLen = 0;
+        for (const v of lists[body] ?? []) {
+          if (v.length > maxLen) maxLen = v.length;
+        }
+        length += maxLen;
+      } else {
+        // フォーマット文字: 1 char = 1 文字相当
+        length += end - (i + 1);
+      }
       i = end + 1;
     } else {
       length++;

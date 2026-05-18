@@ -97,7 +97,7 @@ function valueFor(col: Column, rule: Rule, ctx: GenerateCtx): RawValue {
       return rule.template.split(TEMPLATE_PLACEHOLDER).join(String(num));
     }
     case 'format':
-      return renderFormat(rule.pattern, rng);
+      return renderFormat(rule.pattern, rng, rule.lists);
     case 'number_range':
       return numberFromRange(rule, rowIdx, rng);
     case 'date_range':
@@ -174,7 +174,11 @@ function pickFormatChar(ch: string, rng: Rng): string {
   }
 }
 
-function renderFormat(pattern: string, rng: Rng): string {
+function renderFormat(
+  pattern: string,
+  rng: Rng,
+  lists?: Record<string, ReadonlyArray<string>>,
+): string {
   let out = '';
   let i = 0;
   while (i < pattern.length) {
@@ -183,8 +187,17 @@ function renderFormat(pattern: string, rng: Rng): string {
       const close = pattern.indexOf('}', i + 1);
       const end = close === -1 ? pattern.length : close;
       const body = pattern.slice(i + 1, end);
-      for (const fc of body) {
-        out += pickFormatChar(fc, rng);
+      // body が登録済みリスト名と完全一致したらリスト抽選。
+      // それ以外は従来通り 1 文字ずつ format char として解釈。
+      if (lists && Object.prototype.hasOwnProperty.call(lists, body)) {
+        const values = lists[body];
+        if (values && values.length > 0) {
+          out += values[rng.nextInt(values.length)] ?? '';
+        }
+      } else {
+        for (const fc of body) {
+          out += pickFormatChar(fc, rng);
+        }
       }
       i = end + 1;
       continue;
@@ -227,6 +240,14 @@ function dateFromRange(rule: DateRangeRule, rowIdx: number, rng: Rng): string {
   const MS_PER_DAY = 86_400_000;
   const minMs = Date.parse(rule.min);
   const maxMs = Date.parse(rule.max);
+  // 空文字や不正な日付文字列だと Date.parse は NaN を返し、
+  // 後段の toIsoDate (= new Date(NaN).toISOString()) が "Invalid time value" を投げる。
+  // ここで早期にユーザーフレンドリーなエラーへ変換する。
+  if (!Number.isFinite(minMs) || !Number.isFinite(maxMs)) {
+    throw new Error(
+      `日付範囲ルール: min/max が不正な日付形式です (min="${rule.min}", max="${rule.max}")`,
+    );
+  }
   const [loMs, hiMs] = minMs <= maxMs ? [minMs, maxMs] : [maxMs, minMs];
   if (rule.mode === 'random') {
     const span = hiMs - loMs;
