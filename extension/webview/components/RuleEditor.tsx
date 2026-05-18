@@ -37,7 +37,7 @@ export function defaultRuleForKind(kind: RuleKind): Rule {
         padWidth: 4,
       };
     case 'format':
-      return { kind: 'format', pattern: '{AAA}-{9999}' };
+      return { kind: 'format', pattern: '{AAA}-{9999}', lists: {} };
     case 'number_range':
       return { kind: 'number_range', min: 0, max: 100, decimals: 0, mode: 'random', step: 1 };
     case 'date_range':
@@ -205,19 +205,142 @@ function FormatEditor({
   rule: FormatRule;
   onChange: (r: Rule) => void;
 }) {
+  const lists = rule.lists ?? {};
+  const entries = Object.entries(lists);
+
+  const updateLists = (next: Record<string, ReadonlyArray<string>>) => {
+    onChange({ ...rule, lists: next });
+  };
+
+  const renameKey = (oldName: string, newName: string) => {
+    if (newName === oldName) return;
+    const next: Record<string, ReadonlyArray<string>> = {};
+    for (const [k, v] of entries) {
+      next[k === oldName ? newName : k] = v;
+    }
+    updateLists(next);
+  };
+
+  const setValues = (name: string, values: string[]) => {
+    updateLists({ ...lists, [name]: values });
+  };
+
+  const removeList = (name: string) => {
+    const next = { ...lists };
+    delete next[name];
+    updateLists(next);
+  };
+
+  const addList = () => {
+    let i = entries.length + 1;
+    let name = `L${i}`;
+    while (Object.prototype.hasOwnProperty.call(lists, name)) {
+      i++;
+      name = `L${i}`;
+    }
+    updateLists({ ...lists, [name]: [] });
+  };
+
   return (
-    <div className="editor-inline">
-      <TextField
-        label="パターン"
-        value={rule.pattern}
-        onChange={(pattern) => onChange({ ...rule, pattern })}
-        wide
-      />
-      <span className="legend">
-        {'{...}内 = フォーマット指定 / 外 = リテラル'}
-        <br />
-        A=英大 / a=英小 / 9=数字 / X=英数 / H=ひらがな / K=カタカナ / S=記号 / J=漢字（常用）
-      </span>
+    <div className="editor-stack">
+      <div className="editor-inline">
+        <TextField
+          label="パターン"
+          value={rule.pattern}
+          onChange={(pattern) => onChange({ ...rule, pattern })}
+          wide
+        />
+        <span className="legend">
+          {'{...}内 = フォーマット指定 or 名前付きリスト / 外 = リテラル'}
+          <br />
+          A=英大 / a=英小 / 9=数字 / X=英数 / H=ひらがな / K=カタカナ / S=記号 / J=漢字（常用）
+          <br />
+          {'リスト名と完全一致する {Name} はリストから抽選（例: {L1}-{9999}）'}
+        </span>
+      </div>
+      <div className="format-lists">
+        <div className="format-lists-header">
+          <span>名前付きリスト</span>
+          <button type="button" className="secondary" onClick={addList}>
+            + リスト追加
+          </button>
+        </div>
+        {entries.length === 0 && (
+          <span className="hint">リスト未定義（フォーマット文字のみで生成）</span>
+        )}
+        {entries.map(([name, values]) => (
+          <FormatListRow
+            key={name}
+            name={name}
+            values={values}
+            existingNames={Object.keys(lists)}
+            onRename={(newName) => renameKey(name, newName)}
+            onValuesChange={(next) => setValues(name, next)}
+            onRemove={() => removeList(name)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FormatListRow({
+  name,
+  values,
+  existingNames,
+  onRename,
+  onValuesChange,
+  onRemove,
+}: {
+  name: string;
+  values: ReadonlyArray<string>;
+  existingNames: ReadonlyArray<string>;
+  onRename: (newName: string) => void;
+  onValuesChange: (next: string[]) => void;
+  onRemove: () => void;
+}) {
+  // 名前 / 値テキストを local state に保持し、blur 時に親へ反映。
+  // 入力途中で親から再描画されると `\,` 等が崩れるため。
+  const [nameText, setNameText] = useState(name);
+  const [valuesText, setValuesText] = useState(() => serializeValueList(values));
+  const nameValid =
+    nameText.trim().length > 0 &&
+    !/[{}]/.test(nameText) &&
+    (nameText === name || !existingNames.includes(nameText));
+
+  return (
+    <div className="format-list-row">
+      <label className="field">
+        <span>名前</span>
+        <input
+          type="text"
+          value={nameText}
+          onChange={(e) => setNameText(e.target.value)}
+          onBlur={() => {
+            if (nameValid && nameText !== name) onRename(nameText);
+            else setNameText(name);
+          }}
+        />
+      </label>
+      <label className="field wide">
+        <span>値（カンマ区切り）</span>
+        <input
+          type="text"
+          value={valuesText}
+          onChange={(e) => {
+            setValuesText(e.target.value);
+            onValuesChange(parseValueList(e.target.value));
+          }}
+        />
+      </label>
+      <button
+        type="button"
+        className="icon-btn"
+        title="リストを削除"
+        onClick={onRemove}
+      >
+        ×
+      </button>
     </div>
   );
 }

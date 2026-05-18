@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mock Data Generator (VSCode 拡張) — 使い方</title>
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #57606a;
+    --border: #d0d7de;
+    --bg-soft: #f6f8fa;
+    --accent: #0969da;
+    --code-bg: #eff1f3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
+                 "Hiragino Sans", "Meiryo", sans-serif;
+    color: var(--fg);
+    line-height: 1.7;
+    background: #ffffff;
+  }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+  h1, h2, h3 {
+    line-height: 1.3;
+    margin-top: 2rem;
+  }
+  h1 {
+    font-size: 2rem;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0.4rem;
+  }
+  h2 {
+    font-size: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.3rem;
+    margin-top: 2.5rem;
+  }
+  h3 {
+    font-size: 1.15rem;
+    margin-top: 1.6rem;
+  }
+  hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: 2rem 0;
+  }
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  a:hover { text-decoration: underline; }
+  code {
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.92em;
+  }
+  pre {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 0.9em;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+    font-size: 0.95em;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.55rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  thead th {
+    background: var(--bg-soft);
+    font-weight: 600;
+  }
+  tbody tr:nth-child(even) {
+    background: #fafbfc;
+  }
+  ul, ol { padding-left: 1.6rem; }
+  li { margin: 0.2rem 0; }
+  .toc { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 6px; padding: 0.8rem 1.4rem; }
+  .toc ul { margin: 0.3rem 0; padding-left: 1.2rem; }
+  .lead { color: var(--muted); font-size: 1.05em; }
+  kbd {
+    display: inline-block;
+    padding: 0.1em 0.45em;
+    background: #f6f8fa;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.85em;
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1 id="title">Mock Data Generator (VSCode 拡張)</h1>
+
+<p class="lead">
+  PostgreSQL の <code>CREATE TABLE</code> DDL から、カラム別ルールに基づくモックデータを生成し、
+  <code>INSERT</code> 文として <code>.sql</code> ファイルに出力する VSCode 拡張機能。
+</p>
+
+<hr />
+
+<nav class="toc" aria-label="目次">
+  <h2 style="border:0; margin: 0 0 0.3rem; padding:0; font-size:1.1rem;">目次</h2>
+  <ul>
+    <li><a href="#overview">概要</a></li>
+    <li><a href="#install">インストール</a></li>
+    <li><a href="#usage">使い方</a></li>
+    <li><a href="#rules">ルール一覧</a></li>
+  </ul>
+</nav>
+
+<hr />
+
+<h2 id="overview">概要</h2>
+
+<table>
+  <thead>
+    <tr><th>項目</th><th>内容</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>入力</td><td><code>CREATE TABLE</code> DDL（テキスト貼付または <code>.sql</code> ファイル）</td></tr>
+    <tr><td>出力</td><td>INSERT DML（<code>.sql</code> ファイル）</td></tr>
+    <tr><td>対応 DB</td><td>PostgreSQL</td></tr>
+    <tr><td>行数上限</td><td>内部 10,000 / 表示 1,000（先頭）</td></tr>
+    <tr><td>起動コマンド（from: コマンドパレット）</td><td><code>Mock Data Generator: Open</code></td></tr>
+  </tbody>
+</table>
+
+<h3>主な機能</h3>
+<ul>
+  <li><strong>DDL 解析</strong> — カラム名 / 型 / 桁 / <code>NOT NULL</code> / <code>PRIMARY KEY</code> / <code>UNIQUE</code> を抽出</li>
+  <li><strong>カラム別ルール</strong> — 12 種のルールから選んで列ごとに生成方法を制御</li>
+  <li><strong>表形式の表示と編集</strong> — 生成結果を表で確認・手修正</li>
+  <li><strong>2 つの SQL 形式</strong> — マルチ VALUES（高速 INSERT）／ 1 行 1 INSERT</li>
+</ul>
+
+<hr />
+
+<h2 id="install">インストール</h2>
+
+<h3>A. <code>.vsix</code> ファイルからインストール（推奨）</h3>
+
+<ol>
+  <li>リリース成果物（または社内配布された）<code>mock-data-generator-extension-&lt;version&gt;.vsix</code> を入手</li>
+  <li>以下のいずれかの方法でインストール</li>
+</ol>
+
+<p><strong>コマンドラインから:</strong></p>
+<pre><code>code --install-extension mock-data-generator-extension-&lt;version&gt;.vsix</code></pre>
+
+<p><code>code</code> コマンド未インストールの場合（VSCode から PATH に追加）:</p>
+<ol>
+  <li>VSCode 起動</li>
+  <li>コマンドパレット（Windows: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> / macOS: <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>）</li>
+  <li><code>shell command</code> と入力</li>
+  <li><code>Shell Command: Install 'code' command in PATH</code> を実行</li>
+</ol>
+
+<p><strong>VSCode UI から:</strong></p>
+<ul>
+  <li>Extensions パネル（Windows: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> / macOS: <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd>）を開く</li>
+  <li>右上の <code>…</code> メニュー → <code>Install from VSIX...</code></li>
+  <li>受け取った <code>.vsix</code> ファイルを選択</li>
+</ul>
+
+<p>インストール後、VSCode を再読み込み（<code>Developer: Reload Window</code>）。</p>
+
+<hr />
+
+<h2 id="usage">使い方</h2>
+
+<ol>
+  <li>コマンドパレット（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> / <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>）から <strong><code>Mock Data Generator: Open</code></strong> を実行 → WebView パネルが開く</li>
+  <li><strong>DDL を貼付</strong> →「DDL を解析」をクリック</li>
+  <li><strong>カラム別ルール設定</strong>で列ごとに生成ルールを選択・調整</li>
+  <li><strong>件数</strong>を入力（最大 10,000）→「モックデータ生成」</li>
+  <li>プレビュー表で値を確認・必要に応じて編集
+    <ul>
+      <li>セルクリックで編集 / 行末ボタンで行削除 / 上部ボタンで行追加</li>
+    </ul>
+  </li>
+  <li><strong>「SQL ファイル出力」</strong> → マルチ VALUES / 1 行 1 INSERT を選んで保存先を指定</li>
+</ol>
+
+<h3>出力した SQL の投入例</h3>
+<pre><code>psql -d &lt;DB&gt; -f &lt;table_name&gt;.sql</code></pre>
+
+<hr />
+
+<h2 id="rules">ルール一覧</h2>
+
+<table>
+  <thead>
+    <tr><th>ルール</th><th>用途・指定項目</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>既定</strong></td><td>型に応じた自動生成（fallback）</td></tr>
+    <tr><td><strong>連番</strong></td><td>開始値 / ステップ / ゼロ埋め有無（ON 時に桁数指定）</td></tr>
+    <tr><td><strong>定型文+連番</strong></td><td>定型文に <code>{N}</code> を含めるとその位置に連番を埋め込む（例: <code>USER_{N}_END</code>）。ゼロ埋め可</td></tr>
+    <tr><td><strong>フォーマット指定</strong></td><td><code>{...}</code> 内をフォーマット指定または名前付きリスト名として解釈、外側はリテラル。リスト名は <strong>名前付きリスト</strong> で複数定義可能</td></tr>
+    <tr><td><strong>数値範囲</strong></td><td>min / max / 小数桁 / 生成モード（ランダム・シーケンス増/減）/ ステップ</td></tr>
+    <tr>
+      <td><strong>日付範囲</strong></td>
+      <td>min / max / モード / ステップ / 単位（日・月・年）<br />
+        ※月単位の日末は次月最終日に clamp（<code>2026-01-31</code> + 1ヶ月 → <code>2026-02-28</code>）<br />
+        ※min/max が空または不正な日付の場合は「日付範囲ルール: min/max が不正な日付形式です」のエラーで生成停止</td>
+    </tr>
+    <tr><td><strong>時刻範囲</strong></td><td><code>HH:MM:SS</code> の min / max / モード / ステップ / 単位（秒・分・時）</td></tr>
+    <tr><td><strong>タイムスタンプ範囲</strong></td><td><code>YYYY-MM-DDTHH:MM:SS</code> の min / max / モード / ステップ / 単位（秒・分・時・日）。出力は <code>YYYY-MM-DD HH:MM:SS</code></td></tr>
+    <tr><td><strong>値リスト</strong></td><td>カンマ区切り。<code>\,</code> で値内コンマ、<code>\\</code> でリテラル <code>\</code> をエスケープ</td></tr>
+    <tr><td><strong>生成しない (NULL)</strong></td><td>常に NULL を出力（INSERT には列を含む）。NOT NULL カラムでは警告</td></tr>
+    <tr><td><strong>固定文</strong></td><td>全行同じ固定文字列を出力（SQL では文字列リテラル）</td></tr>
+    <tr>
+      <td><strong>別カラム値参照</strong></td>
+      <td>同一行の別カラム値を流用。<code>同値</code> / <code>より大きい</code> / <code>より小さい</code> を選択。
+        大きい/小さい時は <code>オフセット最小</code>〜<code>オフセット最大</code> で範囲を指定
+        （参照先型に応じた単位: 数値 / 日 / 月 / 年 / 秒 / 分 / 時）。
+        参照先カラムは本カラムより前に定義されている必要がある</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>フォーマット指定の文字種</h3>
+
+<table>
+  <thead>
+    <tr><th>文字</th><th>生成内容</th><th>例</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>A</code></td><td>英大文字</td><td><code>{AAA}</code> → <code>XYZ</code></td></tr>
+    <tr><td><code>a</code></td><td>英小文字</td><td><code>{aaa}</code> → <code>xyz</code></td></tr>
+    <tr><td><code>9</code></td><td>数字</td><td><code>{9999}</code> → <code>1234</code></td></tr>
+    <tr><td><code>X</code></td><td>英数字</td><td><code>{XXX}</code> → <code>a3Z</code></td></tr>
+    <tr><td><code>H</code></td><td>ひらがな</td><td><code>{HH}</code> → <code>あい</code></td></tr>
+    <tr><td><code>K</code></td><td>カタカナ</td><td><code>{KK}</code> → <code>アイ</code></td></tr>
+    <tr><td><code>S</code></td><td>記号 (<code>!#$%&amp;*+-=?@</code>)</td><td><code>{S}</code> → <code>#</code></td></tr>
+    <tr><td><code>J</code></td><td>常用漢字</td><td><code>{JJ}</code> → <code>日本</code></td></tr>
+  </tbody>
+</table>
+
+<p><strong>例:</strong></p>
+<ul>
+  <li><code>{AAA}-{9999}</code> → <code>ABC-1234</code></li>
+  <li><code>PRE{A}-{99}</code> → <code>PREB-42</code></li>
+  <li><code>A-{9}</code> → <code>A-3</code>（先頭 <code>A</code> はリテラル）</li>
+</ul>
+
+<h3>名前付きリスト（フォーマット指定ルール内）</h3>
+
+<p>
+  フォーマット指定ルールでは、ルールごとに <strong>複数の名前付きリスト</strong> を定義し、パターン内
+  <code>{Name}</code> で参照できます。<code>{Name}</code> の中身がリスト名と完全一致したらリストから
+  1 件抽選、未マッチなら従来通り <code>A</code>/<code>9</code> 等のフォーマット文字として解釈されます。
+</p>
+
+<table>
+  <thead>
+    <tr><th>項目</th><th>説明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>定義</td><td>UI のフォーマット指定ルール内「+ リスト追加」で名前と値を追加</td></tr>
+    <tr><td>値の入力</td><td>カンマ区切り。値内コンマは <code>\,</code>、リテラル <code>\</code> は <code>\\</code> でエスケープ（値リストと同じ）</td></tr>
+    <tr><td>参照</td><td>パターン内で <code>{&lt;名前&gt;}</code>（リスト名は中括弧の中に他文字を入れず単独で記述）</td></tr>
+    <tr><td>複数参照</td><td>同名リストを複数回参照すると <strong>毎回独立抽選</strong> される</td></tr>
+    <tr><td>併用</td><td>同じパターン内で フォーマット文字 / リテラル / リスト参照 を自由に混在可能</td></tr>
+  </tbody>
+</table>
+
+<p><strong>例（リスト <code>L1=[東京,大阪,名古屋]</code> / <code>L2=[A,B]</code> を定義した場合）:</strong></p>
+<ul>
+  <li><code>{L1}</code> → <code>東京</code> または <code>大阪</code> または <code>名古屋</code></li>
+  <li><code>{L1}-{L2}-{9999}</code> → <code>大阪-B-4217</code></li>
+  <li><code>USER_{L1}-{9}{9}</code> → <code>USER_名古屋-42</code></li>
+  <li><code>{L1}-{L1}</code> → <code>東京-大阪</code>（同名でも毎回独立抽選）</li>
+</ul>
+
+<h3>サポート型</h3>
+<p>
+  <code>char</code> / <code>varchar</code> / <code>text</code> /
+  <code>smallint</code> / <code>integer</code> / <code>bigint</code> / <code>serial</code> /
+  <code>real</code> / <code>double precision</code> / <code>numeric</code> / <code>decimal</code> /
+  <code>boolean</code> / <code>date</code> / <code>time</code> /
+  <code>timestamp</code>（<code>with/without time zone</code> 含む）。
+</p>
+
+<hr />
+
+</main>
+</body>
+</html>

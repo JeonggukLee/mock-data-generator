@@ -2,7 +2,7 @@
   "name": "mock-data-generator-extension",
   "displayName": "Mock Data Generator",
   "description": "Generate PostgreSQL mock data (INSERT DML) from DDL files inside VSCode",
-  "version": "0.0.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "publisher": "flect",

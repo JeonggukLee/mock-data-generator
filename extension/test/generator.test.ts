@@ -1389,3 +1389,280 @@ describe('Issue reproduction: ref rule offsetUnit と参照値型のミスマッ
     ).toThrow(/解釈できません|cannot be interpreted/);
   });
 });
+
+describe('Issue reproduction: date_range で min/max が空/不正のとき RangeError', () => {
+  // バグ: 日付入力をクリアすると rule.min/max が '' になり、
+  // Date.parse('') = NaN → toIsoDate(new Date(NaN).toISOString()) が
+  // "RangeError: Invalid time value" を投げる（webview には
+  // "Generate failed: RangeError: Invalid time value" として表示）。
+  //
+  // 修正後はジェネレータが早期に明確な日本語エラーへ変換する。
+
+  const dateCol = col('nyusha_date', 'date', { notNull: true });
+
+  it('min が空のとき "Invalid time value" ではなく明確なエラーで throw', () => {
+    expect(() =>
+      generate([dateCol], 1, {
+        rules: {
+          nyusha_date: { kind: 'date_range', min: '', max: '2026-12-31', mode: 'random' },
+        },
+        rng: new Mulberry32(1),
+      }),
+    ).toThrow(/日付範囲ルール: min\/max が不正/);
+  });
+
+  it('max が空のとき同様に throw', () => {
+    expect(() =>
+      generate([dateCol], 1, {
+        rules: {
+          nyusha_date: { kind: 'date_range', min: '2026-01-01', max: '', mode: 'random' },
+        },
+        rng: new Mulberry32(2),
+      }),
+    ).toThrow(/日付範囲ルール: min\/max が不正/);
+  });
+
+  it('不正な日付文字列（"2026-13-99"）でも throw', () => {
+    expect(() =>
+      generate([dateCol], 1, {
+        rules: {
+          nyusha_date: { kind: 'date_range', min: '2026-13-99', max: '2026-12-31', mode: 'random' },
+        },
+        rng: new Mulberry32(3),
+      }),
+    ).toThrow(/日付範囲ルール: min\/max が不正/);
+  });
+
+  it('"Invalid time value" の元エラーは流出しない', () => {
+    let caught: unknown;
+    try {
+      generate([dateCol], 1, {
+        rules: {
+          nyusha_date: { kind: 'date_range', min: '', max: '', mode: 'random' },
+        },
+        rng: new Mulberry32(4),
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(String(caught)).not.toMatch(/Invalid time value/);
+  });
+
+  it('修正は他の範囲ルールに影響しない: time_range は空入力でも従来通り 00:00:00 を返す', () => {
+    const rows = generate(
+      [col('t', 'time')],
+      2,
+      {
+        rules: {
+          t: { kind: 'time_range', min: '', max: '', mode: 'random' },
+        },
+        rng: new Mulberry32(5),
+      },
+    );
+    for (const r of rows) expect(r[0]).toBe('00:00:00');
+  });
+
+  it('修正は他の範囲ルールに影響しない: timestamp_range は空入力でも throw しない', () => {
+    expect(() =>
+      generate(
+        [col('ts', 'timestamp')],
+        2,
+        {
+          rules: {
+            ts: { kind: 'timestamp_range', min: '', max: '', mode: 'random' },
+          },
+          rng: new Mulberry32(6),
+        },
+      ),
+    ).not.toThrow();
+  });
+
+  it('修正は他の範囲ルールに影響しない: number_range は従来通り動く', () => {
+    const rows = generate(
+      [col('n', 'integer')],
+      3,
+      {
+        rules: { n: { kind: 'number_range', min: 1, max: 10, mode: 'random' } },
+        rng: new Mulberry32(7),
+      },
+    );
+    for (const r of rows) {
+      expect(typeof r[0]).toBe('number');
+      expect(r[0]).toBeGreaterThanOrEqual(1);
+      expect(r[0]).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('修正回帰: 正常な date_range は従来通り動く', () => {
+    const rows = generate(
+      [dateCol],
+      5,
+      {
+        rules: {
+          nyusha_date: {
+            kind: 'date_range',
+            min: '2026-01-01',
+            max: '2026-12-31',
+            mode: 'random',
+          },
+        },
+        rng: new Mulberry32(8),
+      },
+    );
+    for (const r of rows) {
+      expect(typeof r[0]).toBe('string');
+      expect(r[0] as string).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+});
+
+describe('generate - format rule with named lists', () => {
+  const c = col('s', 'varchar');
+
+  it('単一リスト参照: {L1} がリストから抽選される', () => {
+    const rows = generate([c], 50, {
+      rules: {
+        s: {
+          kind: 'format',
+          pattern: '{L1}',
+          lists: { L1: ['red', 'green', 'blue'] },
+        },
+      },
+      rng: new Mulberry32(1),
+    });
+    const observed = new Set(rows.map((r) => r[0] as string));
+    expect([...observed].every((v) => ['red', 'green', 'blue'].includes(v))).toBe(true);
+    // 50 行で 3 値すべてが出るはず
+    expect(observed.size).toBe(3);
+  });
+
+  it('複数リスト併用: {L1}-{L2}-{9999} で別々のリスト・format char が混在できる', () => {
+    const rows = generate([c], 20, {
+      rules: {
+        s: {
+          kind: 'format',
+          pattern: '{L1}-{L2}-{9999}',
+          lists: {
+            L1: ['東京', '大阪', '名古屋'],
+            L2: ['A', 'B'],
+          },
+        },
+      },
+      rng: new Mulberry32(2),
+    });
+    for (const r of rows) {
+      expect(r[0] as string).toMatch(/^(東京|大阪|名古屋)-(A|B)-\d{4}$/);
+    }
+  });
+
+  it('同一リスト名を複数回参照: 毎回独立抽選される', () => {
+    // 同 seed でも row ごとの 2 つの {L1} は独立抽選なので、
+    // 異なる組合せ "X-Y" が出る確率が高い。
+    const rows = generate([c], 100, {
+      rules: {
+        s: {
+          kind: 'format',
+          pattern: '{L1}-{L1}',
+          lists: { L1: ['a', 'b', 'c', 'd'] },
+        },
+      },
+      rng: new Mulberry32(3),
+    });
+    const samples = rows.map((r) => r[0] as string);
+    // すべて a-a, b-b 等の同値ペアになっていないことを確認
+    const hasMixedPair = samples.some((s) => {
+      const [x, y] = s.split('-');
+      return x !== y;
+    });
+    expect(hasMixedPair).toBe(true);
+    // フォーマットは常に "<one>-<one>"
+    for (const s of samples) {
+      expect(s).toMatch(/^[a-d]-[a-d]$/);
+    }
+  });
+
+  it('未登録のリスト名は従来通り format char として解釈される', () => {
+    // body "AAA" は lists に存在しないので、A=英大 として 3 文字。
+    const rows = generate([c], 5, {
+      rules: {
+        s: {
+          kind: 'format',
+          pattern: '{AAA}-{L1}',
+          lists: { L1: ['x'] },
+        },
+      },
+      rng: new Mulberry32(4),
+    });
+    for (const r of rows) {
+      expect(r[0] as string).toMatch(/^[A-Z]{3}-x$/);
+    }
+  });
+
+  it('lists が空のときは従来通りの format 動作', () => {
+    const rows = generate([c], 3, {
+      rules: {
+        s: { kind: 'format', pattern: '{AAA}-{9999}', lists: {} },
+      },
+      rng: new Mulberry32(5),
+    });
+    for (const r of rows) {
+      expect(r[0] as string).toMatch(/^[A-Z]{3}-\d{4}$/);
+    }
+  });
+
+  it('lists が undefined でも従来動作（後方互換）', () => {
+    const rows = generate([c], 3, {
+      rules: {
+        s: { kind: 'format', pattern: '{AAA}-{9999}' },
+      },
+      rng: new Mulberry32(6),
+    });
+    for (const r of rows) {
+      expect(r[0] as string).toMatch(/^[A-Z]{3}-\d{4}$/);
+    }
+  });
+
+  it('空リスト参照は空文字に展開される', () => {
+    const rows = generate([c], 3, {
+      rules: {
+        s: { kind: 'format', pattern: 'PRE-{L1}-{9999}', lists: { L1: [] } },
+      },
+      rng: new Mulberry32(7),
+    });
+    for (const r of rows) {
+      expect(r[0] as string).toMatch(/^PRE--\d{4}$/);
+    }
+  });
+
+  it('決定論性: 同 seed なら同じリスト抽選結果になる', () => {
+    const config = {
+      rules: {
+        s: {
+          kind: 'format' as const,
+          pattern: '{L1}-{L2}',
+          lists: { L1: ['x', 'y', 'z'], L2: ['1', '2', '3'] },
+        },
+      },
+    };
+    const a = generate([c], 10, { ...config, rng: new Mulberry32(123) });
+    const b = generate([c], 10, { ...config, rng: new Mulberry32(123) });
+    expect(a).toEqual(b);
+  });
+
+  it('リテラル + リスト + フォーマット文字の混合パターン', () => {
+    // 例: "USER_{L1}-{9}{9}" のような実用パターン
+    const rows = generate([c], 20, {
+      rules: {
+        s: {
+          kind: 'format',
+          pattern: 'USER_{L1}-{9}{9}',
+          lists: { L1: ['Mr', 'Mrs', 'Ms'] },
+        },
+      },
+      rng: new Mulberry32(8),
+    });
+    for (const r of rows) {
+      expect(r[0] as string).toMatch(/^USER_(Mr|Mrs|Ms)-\d\d$/);
+    }
+  });
+});
